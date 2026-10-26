@@ -1,4 +1,8 @@
-// Registrasi plugin anotasi Chart.js (garis BEP & batas tahap)
+// ═══════════════════════════════════════════
+//  Kalkulator KPR — logika (dashboard BRI)
+// ═══════════════════════════════════════════
+
+// Registrasi plugin anotasi Chart.js (garis BEP)
 if (window.Chart && window['chartjs-plugin-annotation']) {
   Chart.register(window['chartjs-plugin-annotation']);
 }
@@ -11,18 +15,29 @@ let state = {
     { months: 108, rate: 9.35, payment: 0 },
   ],
   toEnabled: false,
-  feeMode: 'nominal',
-  result: null,
-  takeover: null,
+  feeMode: 'persen',
 };
-let balanceChartInstance = null;
-let toChartInstance = null;
+let saldoChart = null;
+let kumulatifChart = null;
 
-// ─── Real-time: debounce perhitungan agar hasil update otomatis saat mengetik ───
 let _calcTimer = null;
 function scheduleCalc() {
   clearTimeout(_calcTimer);
   _calcTimer = setTimeout(() => { try { calculate(); } catch (e) { console.error(e); } }, 150);
+}
+function isDark() { return document.documentElement.classList.contains('dark'); }
+
+// ─── Theme toggle ───
+function updateThemeIcon() {
+  const d = isDark();
+  const sun = document.getElementById('iconSun'), moon = document.getElementById('iconMoon');
+  if (sun && moon) { sun.classList.toggle('hidden', !d); moon.classList.toggle('hidden', d); }
+}
+function toggleTheme() {
+  const d = document.documentElement.classList.toggle('dark');
+  try { localStorage.setItem('kpr-theme', d ? 'dark' : 'light'); } catch (e) {}
+  updateThemeIcon();
+  scheduleCalc(); // re-render charts dengan warna tema baru
 }
 
 // ─── Math ───
@@ -32,13 +47,11 @@ function standardPayment(balance, monthlyRate, n) {
   const f = Math.pow(1 + monthlyRate, n);
   return (balance * monthlyRate * f) / (f - 1);
 }
-
 function simulateFull(principal, steps) {
   let balance = principal;
   const rows = [];
   const stepSummaries = [];
   let monthCounter = 0;
-
   steps.forEach((s, stepIdx) => {
     const r = (s.rate || 0) / 100 / 12;
     const startBal = balance;
@@ -55,7 +68,6 @@ function simulateFull(principal, steps) {
     }
     stepSummaries.push({ step: stepIdx + 1, months: s.months, rate: s.rate, payment: s.payment, startBalance: startBal, interest: stepInt, principal: stepPrinc, endBalance: balance });
   });
-
   return {
     rows, stepSummaries,
     totalInterest: rows.reduce((a, r) => a + r.interest, 0),
@@ -64,7 +76,6 @@ function simulateFull(principal, steps) {
     totalMonths: monthCounter,
   };
 }
-
 function solveMonthlyIRR(cashflows) {
   const npv = (rate) => cashflows.reduce((acc, cf, i) => acc + cf / Math.pow(1 + rate, i), 0);
   let lo = -0.99, hi = 3;
@@ -79,195 +90,125 @@ function solveMonthlyIRR(cashflows) {
   }
   return mid;
 }
+function amortizeSingle(principal, annualRate, months) {
+  const r = (annualRate || 0) / 100 / 12;
+  const pmt = standardPayment(principal, r, months);
+  const saldo = [principal];
+  let bal = principal;
+  for (let i = 0; i < months; i++) {
+    const interest = bal * r;
+    bal = bal - (pmt - interest);
+    if (bal < 0) bal = 0;
+    saldo.push(bal);
+  }
+  return { pmt, saldo, totalBayar: pmt * months, totalBunga: pmt * months - principal };
+}
 
 // ─── Formatting ───
 function sym() { return document.getElementById('currency').value; }
-
 function fmtMoney(v) {
   if (v == null || !isFinite(v)) return '—';
   const neg = v < 0;
-  const s = Math.abs(v).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-  return `${neg ? '-' : ''}${sym()} ${s}`;
+  return `${neg ? '-' : ''}${sym()} ${Math.abs(v).toLocaleString('id-ID', { maximumFractionDigits: 0 })}`;
 }
-
-function fmtMoneyFull(v) {
-  if (v == null || !isFinite(v)) return '—';
-  const neg = v < 0;
-  const s = Math.abs(v).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `${neg ? '-' : ''}${sym()} ${s}`;
-}
-
 function fmtCompact(v) {
-  const a = Math.abs(v);
-  let n = v, u = '';
-  if (a >= 1e12) { n = v/1e12; u = ' T'; }
-  else if (a >= 1e9) { n = v/1e9; u = ' M'; }
-  else if (a >= 1e6) { n = v/1e6; u = ' jt'; }
-  else if (a >= 1e3) { n = v/1e3; u = ' rb'; }
-  return sym() + ' ' + n.toLocaleString('id-ID', { maximumFractionDigits: 2 }) + u.replace(' ', ' ');
+  if (v == null || !isFinite(v)) return '—';
+  const a = Math.abs(v); let n = v, u = '';
+  if (a >= 1e12) { n = v / 1e12; u = ' T'; }
+  else if (a >= 1e9) { n = v / 1e9; u = ' M'; }
+  else if (a >= 1e6) { n = v / 1e6; u = ' jt'; }
+  else if (a >= 1e3) { n = v / 1e3; u = ' rb'; }
+  return sym() + ' ' + n.toLocaleString('id-ID', { maximumFractionDigits: 2 }) + u;
 }
-
 function fmtPct(v, d) { return v == null || !isFinite(v) ? '—' : v.toFixed(d || 2) + '%'; }
-
-function parseNum(str) {
-  const d = String(str).replace(/[^0-9]/g, '');
-  return d === '' ? 0 : Number(d);
+function parseNum(str) { const d = String(str).replace(/[^0-9]/g, ''); return d === '' ? 0 : Number(d); }
+function formatThousands(n) { if (n == null || n === '') return ''; const v = Number(n); return isFinite(v) ? Math.round(v).toLocaleString('id-ID') : ''; }
+function restoreCursor(el, fmt, before) {
+  let seen = 0, np = fmt.length;
+  for (let i = 0; i < fmt.length; i++) { if (/[0-9]/.test(fmt[i])) seen++; if (seen === before) { np = i + 1; break; } }
+  if (before === 0) np = 0;
+  el.setSelectionRange(np, np);
 }
-
-function formatThousands(n) {
-  if (n == null || n === '') return '';
-  const v = Number(n);
-  return isFinite(v) ? Math.round(v).toLocaleString('id-ID') : '';
-}
-
 function formatPrincipal(el) {
-  const pos = el.selectionStart;
-  const before = el.value.slice(0, pos).replace(/[^0-9]/g, '').length;
-  const num = parseNum(el.value);
-  const fmt = formatThousands(num);
-  el.value = fmt;
-  // restore cursor
-  let seen = 0, np = fmt.length;
-  for (let i = 0; i < fmt.length; i++) { if (/[0-9]/.test(fmt[i])) seen++; if (seen === before) { np = i + 1; break; } }
-  if (before === 0) np = 0;
-  el.setSelectionRange(np, np);
-  updatePrincipalWords();
-  recalcAll();
-  scheduleCalc();
+  const before = el.value.slice(0, el.selectionStart).replace(/[^0-9]/g, '').length;
+  const fmt = formatThousands(parseNum(el.value));
+  el.value = fmt; restoreCursor(el, fmt, before);
+  updatePrincipalWords(); recalcAll(); scheduleCalc();
 }
-
 function formatField(el) {
-  const pos = el.selectionStart;
-  const before = el.value.slice(0, pos).replace(/[^0-9]/g, '').length;
-  const num = parseNum(el.value);
-  const fmt = formatThousands(num);
-  el.value = fmt;
-  let seen = 0, np = fmt.length;
-  for (let i = 0; i < fmt.length; i++) { if (/[0-9]/.test(fmt[i])) seen++; if (seen === before) { np = i + 1; break; } }
-  if (before === 0) np = 0;
-  el.setSelectionRange(np, np);
+  const before = el.value.slice(0, el.selectionStart).replace(/[^0-9]/g, '').length;
+  const fmt = formatThousands(parseNum(el.value));
+  el.value = fmt; restoreCursor(el, fmt, before);
 }
-
 function terbilang(n) {
-  if (n >= 1e12) return (n/1e12).toLocaleString('id-ID',{maximumFractionDigits:1}) + ' triliun';
-  if (n >= 1e9) return (n/1e9).toLocaleString('id-ID',{maximumFractionDigits:1}) + ' miliar';
-  if (n >= 1e6) return (n/1e6).toLocaleString('id-ID',{maximumFractionDigits:1}) + ' juta';
-  if (n >= 1e3) return (n/1e3).toLocaleString('id-ID',{maximumFractionDigits:1}) + ' ribu';
+  if (n >= 1e12) return (n / 1e12).toLocaleString('id-ID', { maximumFractionDigits: 1 }) + ' triliun';
+  if (n >= 1e9) return (n / 1e9).toLocaleString('id-ID', { maximumFractionDigits: 1 }) + ' miliar';
+  if (n >= 1e6) return (n / 1e6).toLocaleString('id-ID', { maximumFractionDigits: 1 }) + ' juta';
+  if (n >= 1e3) return (n / 1e3).toLocaleString('id-ID', { maximumFractionDigits: 1 }) + ' ribu';
   return n.toLocaleString('id-ID');
 }
-
 function updatePrincipalWords() {
   const n = parseNum(document.getElementById('principal').value);
-  document.getElementById('principalWords').textContent = n > 0 ? '≈ ' + terbilang(n) + ' rupiah' : '';
+  document.getElementById('principalWords').textContent = n > 0 ? '≈ ' + terbilang(n) + (sym() === 'Rp' ? ' rupiah' : '') : '';
 }
-
 function monthsToText(m) {
-  const y = Math.floor(m / 12);
-  const mo = m % 12;
-  let s = '';
-  if (y > 0) s += y + ' tahun';
-  if (mo > 0) s += (s ? ' ' : '') + mo + ' bulan';
-  return s || '0 bulan';
+  const y = Math.floor(m / 12), mo = m % 12; let s = '';
+  if (y > 0) s += y + ' thn'; if (mo > 0) s += (s ? ' ' : '') + mo + ' bln';
+  return s || '0 bln';
 }
 
-// ─── KPR Type Presets ───
+// ─── KPR presets ───
 const KPR_PRESETS = {
-  'fix-float': [
-    { months: 36, rate: 3.88 },
-    { months: 24, rate: 6.5 },
-    { months: 120, rate: 9.35 },
-  ],
-  'fix-all': [
-    { months: 180, rate: 8.25 },
-  ],
-  'jenjang': [
-    { months: 12, rate: 2.75 },
-    { months: 12, rate: 4.5 },
-    { months: 12, rate: 6.25 },
-    { months: 12, rate: 8.0 },
-    { months: 132, rate: 9.35 },
-  ],
-  'promo-3-tahun': [
-    { months: 36, rate: 3.0 },
-    { months: 144, rate: 9.35 },
-  ],
-  'promo-5-tahun': [
-    { months: 60, rate: 5.25 },
-    { months: 120, rate: 9.35 },
-  ],
+  'fix-float': [{ months: 36, rate: 3.88 }, { months: 24, rate: 6.5 }, { months: 120, rate: 9.35 }],
+  'fix-all': [{ months: 180, rate: 8.25 }],
+  'jenjang': [{ months: 12, rate: 2.75 }, { months: 12, rate: 4.5 }, { months: 12, rate: 6.25 }, { months: 12, rate: 8.0 }, { months: 132, rate: 9.35 }],
+  'promo-3-tahun': [{ months: 36, rate: 3.0 }, { months: 144, rate: 9.35 }],
+  'promo-5-tahun': [{ months: 60, rate: 5.25 }, { months: 120, rate: 9.35 }],
 };
-
 function onKprTypeChange() {
   const type = document.getElementById('kprType').value;
   if (type === 'custom') return;
-  const preset = KPR_PRESETS[type];
-  if (!preset) return;
-  state.steps = preset.map(p => ({ months: p.months, rate: p.rate, payment: 0 }));
-  renderSteps();
-  recalcAll();
+  const p = KPR_PRESETS[type]; if (!p) return;
+  state.steps = p.map(x => ({ months: x.months, rate: x.rate, payment: 0 }));
+  renderSteps(); recalcAll(); scheduleCalc();
 }
 
 // ─── Steps UI ───
 function renderSteps() {
   const c = document.getElementById('stepsContainer');
-  c.innerHTML = '';
-  state.steps.forEach((s, i) => {
-    const div = document.createElement('div');
-    div.className = 'step-card';
-    div.innerHTML = `
-      <div class="step-header">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span class="step-badge">${i + 1}</span>
-          <span style="font-size:13px;font-weight:600;">Tahap ${i + 1}</span>
-        </div>
-        ${state.steps.length > 1 ? `<button class="btn-icon" onclick="removeStep(${i})" title="Hapus tahap">✕</button>` : ''}
+  const n = state.steps.length;
+  const inp = 'num w-full px-2 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-md text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-bri transition';
+  const lab = 'block text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1';
+  c.innerHTML = state.steps.map((s, i) => `
+    <div class="bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 border-l-[3px] border-l-bri rounded-lg p-3 transition-all hover:border-l-briorange">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+          <span class="inline-flex items-center justify-center h-5 w-5 rounded bg-bri text-white text-[11px] font-bold">${i + 1}</span> Tahap ${i + 1}
+        </span>
+        ${n > 1 ? `<button onclick="removeStep(${i})" class="text-slate-400 hover:text-red-500 text-sm leading-none transition">✕</button>` : ''}
       </div>
-      <div class="step-fields">
-        <div>
-          <label style="font-size:11px;">Jangka (bulan)</label>
-          <div class="input-wrap">
-            <input type="number" value="${s.months}" min="1" step="1" onchange="updateStep(${i},'months',this.value); recalcAll(); scheduleCalc()">
-          </div>
-        </div>
-        <div>
-          <label style="font-size:11px;">Bunga (%/tahun)</label>
-          <div class="input-wrap">
-            <input type="number" value="${s.rate}" min="0" step="0.01" onchange="updateStep(${i},'rate',this.value); recalcAll(); scheduleCalc()">
-          </div>
-        </div>
-        <div>
-          <label style="font-size:11px;">Angsuran/bulan</label>
-          <div class="input-wrap">
-            <span class="input-prefix" style="font-size:12px;">${sym()}</span>
-            <input type="text" value="${formatThousands(s.payment)}" inputmode="numeric"
-              oninput="formatField(this); updateStep(${i},'payment',parseNum(this.value)); scheduleCalc()">
-          </div>
-        </div>
+      <div class="grid grid-cols-3 gap-2">
+        <div><label class="${lab}">Bulan</label><input type="number" value="${s.months}" min="1" step="1" onchange="updateStep(${i},'months',this.value); recalcAll(); scheduleCalc()" class="${inp}"></div>
+        <div><label class="${lab}">Bunga %</label><input type="number" value="${s.rate}" min="0" step="0.01" onchange="updateStep(${i},'rate',this.value); recalcAll(); scheduleCalc()" class="${inp}"></div>
+        <div><label class="${lab}">Angsuran</label><input type="text" value="${formatThousands(s.payment)}" inputmode="numeric" oninput="formatField(this); updateStep(${i},'payment',parseNum(this.value)); scheduleCalc()" class="${inp}"></div>
       </div>
-    `;
-    c.appendChild(div);
-  });
+    </div>`).join('');
 }
-
 function addStep() {
   if (state.steps.length >= 7) return;
-  const lastRate = state.steps.length ? state.steps[state.steps.length - 1].rate : 0;
-  state.steps.push({ months: 12, rate: lastRate, payment: 0 });
-  renderSteps();
+  const last = state.steps.length ? state.steps[state.steps.length - 1].rate : 0;
+  state.steps.push({ months: 12, rate: last, payment: 0 });
+  renderSteps(); recalcAll(); scheduleCalc();
 }
-
 function removeStep(i) {
   if (state.steps.length <= 1) return;
-  state.steps.splice(i, 1);
-  renderSteps();
+  state.steps.splice(i, 1); renderSteps(); recalcAll(); scheduleCalc();
 }
-
 function updateStep(i, key, val) {
   if (key === 'months') state.steps[i].months = Math.max(1, Math.round(Number(val) || 1));
   else if (key === 'rate') state.steps[i].rate = Number(val) || 0;
   else if (key === 'payment') state.steps[i].payment = Number(val) || 0;
 }
-
 function recalcAll() {
   const principal = parseNum(document.getElementById('principal').value);
   if (principal <= 0) return;
@@ -278,222 +219,67 @@ function recalcAll() {
     const r = (state.steps[i].rate || 0) / 100 / 12;
     const pmt = Math.round(standardPayment(balance, r, remaining));
     state.steps[i].payment = pmt;
-    for (let m = 0; m < monthsOwn; m++) {
-      const interest = balance * r;
-      balance -= pmt - interest;
-    }
+    for (let m = 0; m < monthsOwn; m++) { const interest = balance * r; balance -= pmt - interest; }
   }
   renderSteps();
 }
 
-// ─── Take Over ───
+// ─── Take Over controls ───
 function toggleTO() {
-  state.toEnabled = !state.toEnabled;
-  document.getElementById('toTrack').classList.toggle('active', state.toEnabled);
-  document.getElementById('toFields').style.display = state.toEnabled ? 'block' : 'none';
+  state.toEnabled = document.getElementById('toToggle').checked;
+  document.getElementById('toFields').classList.toggle('hidden', !state.toEnabled);
   scheduleCalc();
 }
-
 function toggleCustomPlafon() {
-  const checked = document.getElementById('customPlafon').checked;
-  document.getElementById('plafonField').style.display = checked ? 'block' : 'none';
+  const c = document.getElementById('customPlafon').checked;
+  document.getElementById('plafonField').classList.toggle('hidden', !c);
   scheduleCalc();
 }
-
-function setFeeMode(mode) {
-  state.feeMode = mode;
-  document.getElementById('feeNominal').classList.toggle('active', mode === 'nominal');
-  document.getElementById('feePersen').classList.toggle('active', mode === 'persen');
-  document.getElementById('feeNominalWrap').style.display = mode === 'nominal' ? 'flex' : 'none';
-  document.getElementById('feePersenWrap').style.display = mode === 'persen' ? 'block' : 'none';
-  updateFeePctLabel();
-  scheduleCalc();
+function onFeeModeChange() {
+  state.feeMode = document.getElementById('feeMode').value;
+  const inp = document.getElementById('feeVal'), suf = document.getElementById('feeSuffix');
+  if (state.feeMode === 'persen') { suf.textContent = '%'; inp.value = '5'; }
+  else { suf.textContent = ''; inp.value = '50.000.000'; }
+  updateFeeHint(); scheduleCalc();
 }
-
-function updateFeePctLabel() {
+function onFeeInput(el) {
+  if (state.feeMode === 'nominal') formatField(el);
+  updateFeeHint(); scheduleCalc();
+}
+function getFee(principal) {
+  const raw = document.getElementById('feeVal').value;
+  if (state.feeMode === 'persen') return Math.round(principal * (Number(raw) || 0) / 100);
+  return parseNum(raw);
+}
+function updateFeeHint() {
   const principal = parseNum(document.getElementById('principal').value);
-  const pct = Number(document.getElementById('toFeePct').value) || 0;
-  const val = Math.round(principal * pct / 100);
-  document.getElementById('feePctValue').textContent = '= ' + fmtMoney(val);
-}
-
-// ─── Collapsible sections ───
-function toggleSection(sectionId, arrowId) {
-  const s = document.getElementById(sectionId);
-  const a = document.getElementById(arrowId);
-  if (s.style.display === 'none') {
-    s.style.display = 'block';
-    a.style.transform = 'rotate(0deg)';
+  const hint = document.getElementById('feeHint');
+  if (state.feeMode === 'persen') {
+    const pct = Number(document.getElementById('feeVal').value) || 0;
+    hint.textContent = '= ' + fmtMoney(Math.round(principal * pct / 100));
   } else {
-    s.style.display = 'none';
-    a.style.transform = 'rotate(-90deg)';
+    const val = parseNum(document.getElementById('feeVal').value);
+    hint.textContent = principal > 0 ? '= ' + fmtPct(val / principal * 100, 2) + ' dari plafon' : '';
   }
 }
-
-// ─── Calculate ───
-function calculate() {
-  const principal = parseNum(document.getElementById('principal').value);
-  if (principal <= 0) { document.getElementById('results').style.display = 'none'; return; }
-
-  // Update currency symbols
-  const s = sym();
-  document.querySelectorAll('#currSymbol,#currSymbol2,#currSymbol3').forEach(el => el.textContent = s);
-
-  const cleanSteps = state.steps.map(st => ({
-    months: Math.max(1, Math.round(st.months)),
-    rate: st.rate || 0,
-    payment: st.payment || 0,
-  }));
-
-  const sim = simulateFull(principal, cleanSteps);
-
-  // IRR
-  const cashflows = [-principal];
-  sim.rows.forEach((row, i) => {
-    const isLast = i === sim.rows.length - 1;
-    cashflows.push(row.payment + (isLast ? sim.endingBalance : 0));
-  });
-  const monthlyIRR = solveMonthlyIRR(cashflows);
-  const nominalAnnual = monthlyIRR !== null ? monthlyIRR * 12 * 100 : null;
-  const effectiveAnnual = monthlyIRR !== null ? (Math.pow(1 + monthlyIRR, 12) - 1) * 100 : null;
-
-  state.result = { ...sim, nominalAnnual, effectiveAnnual };
-
-  // Show results
-  document.getElementById('results').style.display = 'block';
-
-  // Stats
-  const grid = document.getElementById('statGrid');
-  const hasBalloon = Math.abs(sim.endingBalance) > 1;
-  grid.innerHTML = `
-    <div class="stat-box"><div class="stat-label">IRR Tahunan (Nominal)</div><div class="stat-value">${fmtPct(nominalAnnual)}</div><div class="stat-sub">Efektif: ${fmtPct(effectiveAnnual)}</div></div>
-    <div class="stat-box"><div class="stat-label">Total Jangka Waktu</div><div class="stat-value">${sim.totalMonths} bulan</div><div class="stat-sub">${monthsToText(sim.totalMonths)}</div></div>
-    <div class="stat-box"><div class="stat-label">Total Pembayaran</div><div class="stat-value">${fmtCompact(sim.totalPayments)}</div><div class="stat-sub">${fmtMoney(sim.totalPayments)}</div></div>
-    <div class="stat-box"><div class="stat-label">Total Bunga</div><div class="stat-value">${fmtCompact(sim.totalInterest)}</div><div class="stat-sub">${fmtPct(sim.totalInterest / principal * 100, 1)} dari pokok</div></div>
-    <div class="stat-box"><div class="stat-label">Sisa Saldo Akhir</div><div class="stat-value" style="color:${hasBalloon ? 'var(--orange)' : 'var(--green)'};">${hasBalloon ? fmtCompact(sim.endingBalance) : sym() + ' 0'}</div>${hasBalloon ? '<div class="stat-sub" style="color:var(--orange);">⚠ Balloon payment</div>' : '<div class="stat-sub" style="color:var(--green);">✓ Lunas</div>'}</div>
-  `;
-
-  // Balance chart
-  renderBalanceChart(sim);
-
-  // Step summary table
-  renderStepTable(sim);
-
-  // Full amortization table
-  renderAmortTable(sim);
-
-  // Take over comparison
-  if (state.toEnabled) {
-    computeTakeover(principal, sim);
-  } else {
-    document.getElementById('toResults').style.display = 'none';
-  }
-
+function toggleAmort() {
+  const w = document.getElementById('amortWrap'), a = document.getElementById('amortArrow');
+  const hidden = w.classList.toggle('hidden');
+  a.style.transform = hidden ? 'rotate(-90deg)' : 'rotate(0deg)';
 }
 
-// ─── Charts ───
-function getChartColors() {
-  const cs = getComputedStyle(document.documentElement);
-  return {
-    text: cs.getPropertyValue('--fg-soft').trim() || '#5A5F6B',
-    grid: cs.getPropertyValue('--border').trim() || '#E2E5EA',
-    bg: cs.getPropertyValue('--bg-card').trim() || '#FFFFFF',
-  };
-}
-
-function renderBalanceChart(sim) {
-  const step = Math.max(1, Math.ceil(sim.rows.length / 200));
-  const data = [];
-  sim.rows.forEach((r, i) => {
-    if (i % step === 0 || i === sim.rows.length - 1) {
-      data.push({ x: r.month, y: Math.max(0, r.endBalance) });
-    }
-  });
-
-  const cc = getChartColors();
-  const ctx = document.getElementById('balanceChart').getContext('2d');
-  if (balanceChartInstance) balanceChartInstance.destroy();
-
-  // Step boundary annotations
-  const annotations = {};
-  let cum = 0;
-  sim.stepSummaries.forEach((s, i) => {
-    cum += s.months;
-    if (i < sim.stepSummaries.length - 1) {
-      annotations['step' + i] = {
-        type: 'line', xMin: cum, xMax: cum,
-        borderColor: 'rgba(90,95,107,0.3)', borderWidth: 1, borderDash: [4, 4],
-      };
-    }
-  });
-
-  balanceChartInstance = new Chart(ctx, {
-    type: 'line',
-    data: {
-      datasets: [{
-        data: data,
-        borderColor: '#2a78d6',
-        backgroundColor: 'rgba(42,120,214,0.08)',
-        borderWidth: 2,
-        pointRadius: 0,
-        pointHoverRadius: 4,
-        fill: true,
-        tension: 0.1,
-      }],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: cc.bg,
-          titleColor: cc.text,
-          bodyColor: cc.text,
-          borderColor: cc.grid,
-          borderWidth: 1,
-          padding: 10,
-          callbacks: {
-            title: (items) => 'Bulan ' + items[0].parsed.x,
-            label: (item) => 'Saldo: ' + fmtMoney(item.parsed.y),
-          },
-        },
-        annotation: { annotations },
-      },
-      scales: {
-        x: {
-          type: 'linear',
-          title: { display: true, text: 'Bulan', color: cc.text, font: { size: 12 } },
-          ticks: { color: cc.text, font: { size: 11 } },
-          grid: { color: cc.grid, lineWidth: 0.5 },
-        },
-        y: {
-          title: { display: true, text: 'Saldo (' + sym() + ')', color: cc.text, font: { size: 12 } },
-          ticks: { color: cc.text, font: { size: 11 }, callback: (v) => fmtCompact(v) },
-          grid: { color: cc.grid, lineWidth: 0.5 },
-        },
-      },
-      interaction: { mode: 'index', intersect: false },
-    },
-  });
-}
-
+// ─── Take Over computation ───
 function computeTakeover(principal, sim) {
   const oldPrincipal = document.getElementById('customPlafon').checked ? parseNum(document.getElementById('oldPlafon').value) : principal;
-  const oldR = (Number(document.getElementById('oldRate').value) || 0) / 100 / 12;
+  const oldRate = Number(document.getElementById('oldRate').value) || 0;
   const oldMonths = Math.max(1, Math.round(Number(document.getElementById('oldTerm').value) || 1));
-  const oldPmt = standardPayment(oldPrincipal, oldR, oldMonths);
-
-  let fee;
-  if (state.feeMode === 'persen') {
-    fee = Math.round(principal * (Number(document.getElementById('toFeePct').value) || 0) / 100);
-  } else {
-    fee = parseNum(document.getElementById('toFee').value);
-  }
+  const oldAmort = amortizeSingle(oldPrincipal, oldRate, oldMonths);
+  const oldPmt = oldAmort.pmt;
+  const fee = getFee(principal);
 
   const horizon = Math.max(oldMonths, sim.totalMonths);
   const cumOld = [0], cumNew = [fee];
   let runOld = 0, runNew = fee;
-
   for (let t = 1; t <= horizon; t++) {
     if (t <= oldMonths) runOld += oldPmt;
     cumOld.push(runOld);
@@ -503,246 +289,267 @@ function computeTakeover(principal, sim) {
     }
     cumNew.push(runNew);
   }
-
-  // Find crossings
   const crossings = [];
   for (let t = 1; t <= horizon; t++) {
-    const dP = cumNew[t-1] - cumOld[t-1];
-    const dC = cumNew[t] - cumOld[t];
-    if (Math.abs(dP) < 1e-6) crossings.push(t-1);
+    const dP = cumNew[t - 1] - cumOld[t - 1], dC = cumNew[t] - cumOld[t];
+    if (Math.abs(dP) < 1e-6) crossings.push(t - 1);
     else if (dP * dC < 0) crossings.push(t - 1 + dP / (dP - dC));
   }
   crossings.sort((a, b) => a - b);
-  const meets = crossings.filter((m, i) => i === 0 || Math.abs(m - crossings[i-1]) > 1e-4);
+  const meets = crossings.filter((m, i) => i === 0 || Math.abs(m - crossings[i - 1]) > 1e-4);
 
   const oldTotal = cumOld[oldMonths];
   const newTotal = cumNew[sim.totalMonths];
-  const selisih = newTotal - oldTotal;
-
-  // Old interest
-  const oldTotalInterest = oldPmt * oldMonths - oldPrincipal;
-
-  // Show TO results
-  document.getElementById('toResults').style.display = 'block';
-
-  // Banner
-  const banner = document.getElementById('toBanner');
-  if (selisih < 0) {
-    banner.innerHTML = `<div class="info-banner green">✅ <div><strong>Take over lebih hemat!</strong> Anda menghemat <strong>${fmtMoney(Math.abs(selisih))}</strong> dibandingkan skema lama.</div></div>`;
-  } else if (selisih > 0) {
-    banner.innerHTML = `<div class="info-banner orange">⚠️ <div><strong>Take over lebih mahal</strong> sebesar <strong>${fmtMoney(selisih)}</strong>. Pertimbangkan manfaat lainnya (bunga rendah di awal, fleksibilitas).</div></div>`;
-  } else {
-    banner.innerHTML = `<div class="info-banner" style="background:var(--accent-light);color:var(--accent);">ℹ️ <div>Total pembayaran skema lama dan baru hampir sama.</div></div>`;
-  }
-
-  if (meets.length > 0) {
-    banner.innerHTML += `<div class="info-banner" style="background:var(--accent-light);color:var(--accent);margin-top:8px;">📍 <div>Titik impas (BEP): bulan ke-<strong>${Math.round(meets[0])}</strong> (${monthsToText(Math.round(meets[0]))})</div></div>`;
-  }
-
-  // Comparison boxes
-  const comp = document.getElementById('compareRow');
-  comp.innerHTML = `
-    <div class="compare-box" style="background:var(--bg-input);">
-      <div style="font-size:13px;font-weight:700;color:var(--fg-soft);margin-bottom:12px;">📜 SKEMA LAMA</div>
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        <div><div class="stat-label">Plafon</div><div style="font-weight:600;font-family:'DM Mono',monospace;">${fmtMoney(oldPrincipal)}</div></div>
-        <div><div class="stat-label">Bunga</div><div style="font-weight:600;">${fmtPct((Number(document.getElementById('oldRate').value) || 0))} flat</div></div>
-        <div><div class="stat-label">Tenor</div><div style="font-weight:600;">${oldMonths} bulan (${monthsToText(oldMonths)})</div></div>
-        <div><div class="stat-label">Angsuran/bulan</div><div style="font-weight:600;font-family:'DM Mono',monospace;">${fmtMoney(Math.round(oldPmt))}</div></div>
-        <div class="divider"></div>
-        <div><div class="stat-label">Total Pokok + Bunga</div><div style="font-weight:700;font-size:16px;font-family:'DM Mono',monospace;">${fmtMoney(Math.round(oldTotal))}</div></div>
-        <div><div class="stat-label">Total Bunga</div><div style="font-weight:600;font-family:'DM Mono',monospace;color:var(--red);">${fmtMoney(Math.round(oldTotalInterest))}</div></div>
-      </div>
-    </div>
-    <div class="compare-vs">VS</div>
-    <div class="compare-box" style="background:var(--accent-light);border-color:var(--accent);">
-      <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:12px;">🆕 SKEMA BARU (TO)</div>
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        <div><div class="stat-label">Plafon</div><div style="font-weight:600;font-family:'DM Mono',monospace;">${fmtMoney(principal)}</div></div>
-        <div><div class="stat-label">Bunga</div><div style="font-weight:600;">Bertahap (${state.steps.length} tahap)</div></div>
-        <div><div class="stat-label">Tenor</div><div style="font-weight:600;">${sim.totalMonths} bulan (${monthsToText(sim.totalMonths)})</div></div>
-        <div><div class="stat-label">Biaya TO</div><div style="font-weight:600;font-family:'DM Mono',monospace;">${fmtMoney(fee)}</div></div>
-        <div class="divider"></div>
-        <div><div class="stat-label">Total Pokok + Bunga + Biaya TO</div><div style="font-weight:700;font-size:16px;font-family:'DM Mono',monospace;">${fmtMoney(Math.round(newTotal))}</div></div>
-        <div><div class="stat-label">Total Bunga</div><div style="font-weight:600;font-family:'DM Mono',monospace;color:var(--red);">${fmtMoney(Math.round(sim.totalInterest))}</div></div>
-      </div>
-    </div>
-  `;
-
-  // TO chart
-  renderTOChart(cumOld, cumNew, horizon, meets);
+  return {
+    oldPrincipal, oldRate, oldMonths, oldPmt, fee, horizon, cumOld, cumNew,
+    oldSaldo: oldAmort.saldo, oldTotalBunga: oldAmort.totalBunga,
+    meets, oldTotal, newTotal, efisiensi: oldTotal - newTotal,
+  };
 }
 
-function renderTOChart(cumOld, cumNew, horizon, meets) {
-  const step = Math.max(1, Math.ceil(horizon / 200));
-  const dataOld = [], dataNew = [];
-  for (let t = 0; t <= horizon; t++) {
-    if (t % step === 0 || t === horizon) {
-      dataOld.push({ x: t, y: cumOld[t] });
-      dataNew.push({ x: t, y: cumNew[t] });
+// ─── Main calculate (real-time) ───
+function calculate() {
+  const principal = parseNum(document.getElementById('principal').value);
+  const s = sym();
+  document.getElementById('curr1').textContent = s;
+  document.getElementById('curr2').textContent = s;
+  if (principal <= 0) return;
+
+  const cleanSteps = state.steps.map(st => ({ months: Math.max(1, Math.round(st.months)), rate: st.rate || 0, payment: st.payment || 0 }));
+  const sim = simulateFull(principal, cleanSteps);
+
+  const cashflows = [-principal];
+  sim.rows.forEach((row, i) => { cashflows.push(row.payment + (i === sim.rows.length - 1 ? sim.endingBalance : 0)); });
+  const mIRR = solveMonthlyIRR(cashflows);
+  sim.irrNominal = mIRR !== null ? mIRR * 12 * 100 : null;
+  sim.irrEfektif = mIRR !== null ? (Math.pow(1 + mIRR, 12) - 1) * 100 : null;
+
+  const to = state.toEnabled ? computeTakeover(principal, sim) : null;
+
+  renderSummaryCards(sim, to, principal);
+  renderMetrics(sim, to, principal);
+  renderCharts(sim, to);
+  renderStepTable(sim);
+  renderAmort(sim);
+  renderToBanner(sim, to);
+}
+
+// ─── Render: summary cards ───
+function renderSummaryCards(sim, to, principal) {
+  const firstPmt = sim.stepSummaries[0] ? sim.stepSummaries[0].payment : 0;
+  const multi = sim.stepSummaries.length > 1;
+  const pctBunga = principal > 0 ? (sim.totalInterest / principal * 100) : 0;
+  const whiteCard = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5';
+
+  let html = `
+    <div class="relative overflow-hidden rounded-2xl p-5 text-white shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5" style="background:linear-gradient(135deg,#0072C6,#00529C)">
+      <div class="absolute -right-6 -top-6 w-24 h-24 bg-white/10 rounded-full"></div>
+      <p class="text-blue-100 text-xs font-semibold mb-1">Angsuran Awal ${multi ? '(Tahap 1)' : ''}</p>
+      <h3 class="text-2xl font-bold mb-1 num">${fmtMoney(firstPmt)}<span class="text-xs font-normal"> /bln</span></h3>
+      <p class="text-[11px] text-blue-200">${multi ? 'Naik bertahap · ' : ''}Total bunga ${fmtCompact(sim.totalInterest)}</p>
+    </div>`;
+
+  if (to) {
+    const selPmt = to.oldPmt - firstPmt;
+    const pmtHtml = selPmt >= 0
+      ? `<span class="text-emerald-600 dark:text-emerald-400">▼ ${fmtMoney(selPmt)}</span>`
+      : `<span class="text-red-500 dark:text-red-400">▲ ${fmtMoney(Math.abs(selPmt))}</span>`;
+    const hemat = to.efisiensi >= 0;
+    const effColor = hemat ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
+    html += `
+      <div class="${whiteCard}">
+        <p class="text-slate-500 dark:text-slate-400 text-xs font-semibold mb-1">Perubahan Angsuran</p>
+        <h3 class="text-xl font-bold mb-1 num">${pmtHtml}</h3>
+        <p class="text-[11px] text-slate-400 dark:text-slate-500">Lama: ${fmtMoney(Math.round(to.oldPmt))}/bln</p>
+      </div>
+      <div class="${whiteCard}">
+        <p class="text-slate-500 dark:text-slate-400 text-xs font-semibold mb-1">Total Efisiensi TO</p>
+        <h3 class="text-xl font-bold mb-1 num ${effColor}">${hemat ? 'Hemat ' : 'Rugi '}${fmtCompact(Math.abs(to.efisiensi))}</h3>
+        <p class="text-[11px] text-slate-400 dark:text-slate-500">Termasuk biaya TO ${fmtCompact(to.fee)}</p>
+      </div>`;
+  } else {
+    html += `
+      <div class="${whiteCard}">
+        <p class="text-slate-500 dark:text-slate-400 text-xs font-semibold mb-1">Total Pembayaran</p>
+        <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 num">${fmtCompact(sim.totalPayments)}</h3>
+        <p class="text-[11px] text-slate-400 dark:text-slate-500">${sim.totalMonths} bulan</p>
+      </div>
+      <div class="${whiteCard}">
+        <p class="text-slate-500 dark:text-slate-400 text-xs font-semibold mb-1">Total Bunga</p>
+        <h3 class="text-xl font-bold text-bri dark:text-blue-300 num">${fmtCompact(sim.totalInterest)}</h3>
+        <p class="text-[11px] text-slate-400 dark:text-slate-500">${fmtPct(pctBunga, 1)} dari pokok</p>
+      </div>`;
+  }
+  document.getElementById('summaryCards').innerHTML = html;
+}
+
+// ─── Render: metrics grid ───
+function metricCell(label, value, o) {
+  o = o || {};
+  const bg = o.bg || 'bg-slate-50 dark:bg-slate-700/50';
+  const lc = o.lc || 'text-slate-500 dark:text-slate-400';
+  const vc = o.vc || 'text-slate-800 dark:text-slate-100';
+  return `<div class="p-3 rounded-lg ${bg} transition-all duration-200 hover:-translate-y-0.5">
+    <p class="text-[10px] font-bold uppercase mb-1 ${lc}">${label}</p>
+    <p class="text-sm font-semibold num ${vc}">${value}</p></div>`;
+}
+function renderMetrics(sim, to, principal) {
+  const balloon = Math.abs(sim.endingBalance) > 1;
+  let html =
+    metricCell('Total Jangka Waktu', sim.totalMonths + ' bln (' + monthsToText(sim.totalMonths) + ')') +
+    metricCell('Total Pembayaran', fmtCompact(sim.totalPayments)) +
+    metricCell('Total Bunga', fmtCompact(sim.totalInterest), { vc: 'text-bri dark:text-blue-300' }) +
+    metricCell('IRR Bank (Tahunan)', fmtPct(sim.irrNominal), { bg: 'bg-bri-light dark:bg-blue-900/20', lc: 'text-bri dark:text-blue-300', vc: 'text-bri dark:text-blue-300' }) +
+    metricCell('IRR Efektif', fmtPct(sim.irrEfektif)) +
+    metricCell('Sisa Saldo Akhir', balloon ? fmtCompact(sim.endingBalance) : sym() + ' 0',
+      balloon ? { vc: 'text-orange-600 dark:text-orange-400' } : { vc: 'text-emerald-600 dark:text-emerald-400' });
+
+  if (to) {
+    const effGood = to.efisiensi >= 0;
+    html +=
+      metricCell('Plafon Skema Lama', fmtCompact(to.oldPrincipal), { bg: 'bg-orange-50 dark:bg-orange-900/20', lc: 'text-orange-600 dark:text-orange-300' }) +
+      metricCell('Total Bayar Lama', fmtCompact(to.oldTotal), { bg: 'bg-orange-50 dark:bg-orange-900/20', lc: 'text-orange-600 dark:text-orange-300' }) +
+      metricCell('Biaya TO (Bulan 0)', fmtCompact(to.fee), { bg: 'bg-red-50 dark:bg-red-900/20', lc: 'text-red-600 dark:text-red-300', vc: 'text-red-600 dark:text-red-300' }) +
+      metricCell(effGood ? 'Penghematan Total' : 'Kerugian Total', fmtCompact(Math.abs(to.efisiensi)),
+        { bg: effGood ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'bg-red-50 dark:bg-red-900/20', lc: effGood ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300', vc: effGood ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300' });
+  }
+  document.getElementById('metricsGrid').innerHTML = html;
+}
+
+// ─── Render: TO banner ───
+function renderToBanner(sim, to) {
+  const el = document.getElementById('toBanner');
+  if (!to) { el.innerHTML = ''; return; }
+  let msg, cls;
+  if (to.efisiensi > 0) { cls = 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-900/40'; msg = `✅ <b>Take over lebih hemat</b> — Anda menghemat <b>${fmtMoney(Math.round(to.efisiensi))}</b> dibanding skema lama.`; }
+  else if (to.efisiensi < 0) { cls = 'bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 border-orange-100 dark:border-orange-900/40'; msg = `⚠️ <b>Take over lebih mahal</b> sebesar <b>${fmtMoney(Math.round(Math.abs(to.efisiensi)))}</b>. Pertimbangkan manfaat lain (bunga awal rendah).`; }
+  else { cls = 'bg-bri-light dark:bg-blue-900/20 text-bri dark:text-blue-300 border-blue-100 dark:border-blue-900/40'; msg = `Total pembayaran skema lama & baru hampir sama.`; }
+  let bep = '';
+  if (to.meets.length) bep = `<div class="mt-2 text-xs">📍 Titik impas (BEP): <b>bulan ke-${Math.round(to.meets[0])}</b> (${monthsToText(Math.round(to.meets[0]))})</div>`;
+  el.innerHTML = `<div class="rounded-2xl border px-5 py-4 text-sm font-medium ${cls}">${msg}${bep}</div>`;
+}
+
+// ─── Render: charts ───
+function downsample(arr, maxN) {
+  const n = arr.length;
+  if (n <= maxN) return arr.map((y, x) => ({ x, y }));
+  const step = Math.ceil(n / maxN);
+  const out = [];
+  for (let i = 0; i < n; i += step) out.push({ x: i, y: arr[i] });
+  if (out[out.length - 1].x !== n - 1) out.push({ x: n - 1, y: arr[n - 1] });
+  return out;
+}
+function renderCharts(sim, to) {
+  const balBaru = [parseNum(document.getElementById('principal').value)];
+  sim.rows.forEach(r => balBaru.push(Math.max(0, r.endBalance)));
+  const cumBaru = [0]; let run = 0;
+  sim.rows.forEach(r => { run += r.payment; cumBaru.push(run); });
+
+  const dsSaldo = [{ label: 'Saldo Baru', data: downsample(balBaru, 220), borderColor: '#00529C', backgroundColor: 'rgba(0,82,156,0.08)', borderWidth: 2, fill: true, tension: 0.2, pointRadius: 0, pointHoverRadius: 4 }];
+  const dsKum = [{ label: 'Kumulatif Baru', data: downsample(to ? to.cumNew : cumBaru, 220), borderColor: '#00529C', backgroundColor: 'rgba(0,82,156,0.06)', borderWidth: 2, fill: true, tension: 0.2, pointRadius: 0, pointHoverRadius: 4 }];
+  let annos = {};
+  if (to) {
+    dsSaldo.push({ label: 'Saldo Lama', data: downsample(to.oldSaldo, 220), borderColor: '#F58220', borderDash: [5, 4], borderWidth: 2, fill: false, tension: 0.2, pointRadius: 0, pointHoverRadius: 4 });
+    dsKum.push({ label: 'Kumulatif Lama', data: downsample(to.cumOld, 220), borderColor: '#F58220', borderDash: [5, 4], borderWidth: 2, fill: false, tension: 0.2, pointRadius: 0, pointHoverRadius: 4 });
+    if (to.meets.length) {
+      annos.bep = { type: 'line', xMin: Math.round(to.meets[0]), xMax: Math.round(to.meets[0]), borderColor: '#94a3b8', borderWidth: 1.5, borderDash: [6, 4], label: { display: true, content: 'BEP', position: 'start', backgroundColor: 'rgba(100,116,139,0.9)', color: '#fff', font: { size: 10 } } };
     }
   }
 
-  const cc = getChartColors();
-  const ctx = document.getElementById('toChart').getContext('2d');
-  if (toChartInstance) toChartInstance.destroy();
+  const dark = isDark();
+  const tickColor = dark ? '#94a3b8' : '#64748b';
+  const gridColor = dark ? 'rgba(148,163,184,0.14)' : '#eef2f7';
+  const legendColor = dark ? '#cbd5e1' : '#475569';
 
-  const annotations = {};
-  meets.forEach((m, i) => {
-    annotations['meet' + i] = {
-      type: 'line', xMin: Math.round(m), xMax: Math.round(m),
-      borderColor: 'rgba(90,95,107,0.5)', borderWidth: 1.5, borderDash: [6, 4],
-      label: { display: true, content: 'BEP', position: 'start', backgroundColor: 'rgba(90,95,107,0.8)', font: { size: 11 } },
-    };
-  });
-
-  toChartInstance = new Chart(ctx, {
-    type: 'line',
-    data: {
-      datasets: [
-        {
-          label: 'Skema Baru (TO)',
-          data: dataNew,
-          borderColor: '#2a78d6',
-          backgroundColor: 'rgba(42,120,214,0.06)',
-          borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, fill: true, tension: 0.1,
-        },
-        {
-          label: 'Skema Lama',
-          data: dataOld,
-          borderColor: '#eb6834',
-          backgroundColor: 'rgba(235,104,52,0.06)',
-          borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, fill: true, tension: 0.1,
-        },
-      ],
+  const baseOpts = (withAnno) => ({
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    animation: { duration: 500 },
+    plugins: {
+      legend: { display: !!to, position: 'bottom', labels: { boxWidth: 12, font: { size: 10 }, color: legendColor, usePointStyle: true } },
+      tooltip: { callbacks: { title: (it) => 'Bulan ' + it[0].parsed.x, label: (it) => it.dataset.label + ': ' + fmtMoney(it.parsed.y) } },
+      annotation: { annotations: withAnno ? annos : {} },
     },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: true, position: 'top', labels: { usePointStyle: true, pointStyle: 'line', padding: 16, color: cc.text, font: { size: 12 } } },
-        tooltip: {
-          backgroundColor: cc.bg, titleColor: cc.text, bodyColor: cc.text, borderColor: cc.grid, borderWidth: 1, padding: 10,
-          callbacks: {
-            title: (items) => 'Bulan ' + items[0].parsed.x,
-            label: (item) => item.dataset.label + ': ' + fmtMoney(item.parsed.y),
-          },
-        },
-        annotation: { annotations },
-      },
-      scales: {
-        x: {
-          type: 'linear',
-          title: { display: true, text: 'Bulan', color: cc.text, font: { size: 12 } },
-          ticks: { color: cc.text, font: { size: 11 } },
-          grid: { color: cc.grid, lineWidth: 0.5 },
-        },
-        y: {
-          title: { display: true, text: 'Kumulatif Pembayaran (' + sym() + ')', color: cc.text, font: { size: 12 } },
-          ticks: { color: cc.text, font: { size: 11 }, callback: (v) => fmtCompact(v) },
-          grid: { color: cc.grid, lineWidth: 0.5 },
-        },
-      },
-      interaction: { mode: 'index', intersect: false },
+    scales: {
+      x: { type: 'linear', ticks: { color: tickColor, font: { size: 10 }, maxTicksLimit: 8 }, grid: { color: gridColor }, title: { display: true, text: 'Bulan', color: tickColor, font: { size: 10 } } },
+      y: { beginAtZero: true, ticks: { color: tickColor, font: { size: 10 }, maxTicksLimit: 6, callback: (v) => fmtCompact(v) }, grid: { color: gridColor } },
     },
   });
+
+  if (saldoChart) { saldoChart.data.datasets = dsSaldo; saldoChart.options = baseOpts(false); saldoChart.update(); }
+  else { saldoChart = new Chart(document.getElementById('saldoChart'), { type: 'line', data: { datasets: dsSaldo }, options: baseOpts(false) }); }
+  if (kumulatifChart) { kumulatifChart.data.datasets = dsKum; kumulatifChart.options = baseOpts(true); kumulatifChart.update(); }
+  else { kumulatifChart = new Chart(document.getElementById('kumulatifChart'), { type: 'line', data: { datasets: dsKum }, options: baseOpts(true) }); }
 }
 
-// ─── Tables ───
+// ─── Render: step table ───
 function renderStepTable(sim) {
-  const s = sym();
-  let html = '<table><thead><tr><th>Tahap</th><th>Bulan</th><th>Bunga (%)</th><th>Angsuran</th><th>Pokok Dibayar</th><th>Bunga Dibayar</th><th>Saldo Akhir</th></tr></thead><tbody>';
-  sim.stepSummaries.forEach(r => {
-    html += `<tr>
-      <td style="text-align:center;"><span class="step-badge">${r.step}</span></td>
-      <td>${r.months}</td>
-      <td>${fmtPct(r.rate)}</td>
-      <td>${fmtMoney(Math.round(r.payment))}</td>
-      <td>${fmtMoney(Math.round(r.principal))}</td>
-      <td>${fmtMoney(Math.round(r.interest))}</td>
-      <td>${fmtMoney(Math.round(r.endBalance))}</td>
+  const td = 'px-3 py-2.5 border-t border-slate-100 dark:border-slate-700';
+  let rows = sim.stepSummaries.map(r => `
+    <tr class="hover:bg-bri-light/40 dark:hover:bg-slate-700/40 transition-colors">
+      <td class="${td} text-center"><span class="inline-flex items-center justify-center h-5 w-5 rounded bg-bri text-white text-[11px] font-bold">${r.step}</span></td>
+      <td class="${td}">${r.months}</td>
+      <td class="${td}">${fmtPct(r.rate)}</td>
+      <td class="${td} font-semibold">${fmtMoney(Math.round(r.payment))}</td>
+      <td class="${td}">${fmtMoney(Math.round(r.principal))}</td>
+      <td class="${td} text-bri dark:text-blue-300">${fmtMoney(Math.round(r.interest))}</td>
+      <td class="${td}">${fmtMoney(Math.round(r.endBalance))}</td>
+    </tr>`).join('');
+  rows += `
+    <tr class="bg-bri-light dark:bg-slate-700 font-bold">
+      <td class="px-3 py-2.5 border-t border-slate-200 dark:border-slate-600" colspan="3">TOTAL</td>
+      <td class="px-3 py-2.5 border-t border-slate-200 dark:border-slate-600">${fmtMoney(Math.round(sim.totalPayments))}</td>
+      <td class="px-3 py-2.5 border-t border-slate-200 dark:border-slate-600">${fmtMoney(Math.round(sim.totalPayments - sim.totalInterest))}</td>
+      <td class="px-3 py-2.5 border-t border-slate-200 dark:border-slate-600 text-bri dark:text-blue-300">${fmtMoney(Math.round(sim.totalInterest))}</td>
+      <td class="px-3 py-2.5 border-t border-slate-200 dark:border-slate-600">${fmtMoney(Math.round(sim.endingBalance))}</td>
     </tr>`;
-  });
-  // Total row
-  html += `<tr style="font-weight:700;background:var(--accent-light);">
-    <td colspan="3">TOTAL</td>
-    <td>${fmtMoney(Math.round(sim.totalPayments))}</td>
-    <td>${fmtMoney(Math.round(sim.totalPayments - sim.totalInterest))}</td>
-    <td>${fmtMoney(Math.round(sim.totalInterest))}</td>
-    <td>${fmtMoney(Math.round(sim.endingBalance))}</td>
-  </tr>`;
-  html += '</tbody></table>';
-  document.getElementById('stepTable').innerHTML = html;
+  document.getElementById('stepTable').innerHTML = `
+    <table class="num w-full text-left text-sm text-slate-600 dark:text-slate-300 whitespace-nowrap">
+      <thead class="bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-[11px] uppercase font-semibold">
+        <tr><th class="px-3 py-3 text-center">Tahap</th><th class="px-3 py-3">Bulan</th><th class="px-3 py-3">Bunga</th><th class="px-3 py-3">Angsuran</th><th class="px-3 py-3">Pokok</th><th class="px-3 py-3">Bunga Dibayar</th><th class="px-3 py-3">Saldo Akhir</th></tr>
+      </thead><tbody>${rows}</tbody></table>`;
 }
 
-function renderAmortTable(sim) {
-  const s = sym();
-  // Show first 36 months + option to expand
+// ─── Render: full amortization ───
+let _lastSim = null;
+function renderAmort(sim) {
+  _lastSim = sim;
   const showAll = sim.rows.length <= 60;
   const rows = showAll ? sim.rows : sim.rows.slice(0, 36);
-
-  let html = '<table><thead><tr><th>Bln</th><th>Tahap</th><th>Saldo Awal</th><th>Bunga</th><th>Pokok</th><th>Angsuran</th><th>Saldo Akhir</th></tr></thead><tbody>';
-  rows.forEach(r => {
-    html += `<tr>
-      <td>${r.month}</td>
-      <td style="text-align:center;"><span class="step-badge">${r.step}</span></td>
-      <td>${fmtMoney(Math.round(r.beginBalance))}</td>
-      <td>${fmtMoney(Math.round(r.interest))}</td>
-      <td>${fmtMoney(Math.round(r.principal))}</td>
-      <td>${fmtMoney(Math.round(r.payment))}</td>
-      <td>${fmtMoney(Math.round(r.endBalance))}</td>
-    </tr>`;
-  });
-  html += '</tbody></table>';
-
-  if (!showAll) {
-    html += `<div style="text-align:center;margin-top:12px;">
-      <button class="btn btn-outline btn-sm" onclick="showFullAmort()">Tampilkan semua ${sim.rows.length} bulan</button>
-    </div>`;
-  }
-
-  document.getElementById('amortTable').innerHTML = html;
+  document.getElementById('amortTable').innerHTML = amortTableHtml(rows) +
+    (showAll ? '' : `<div class="text-center mt-3"><button onclick="showFullAmort()" class="text-xs font-semibold text-bri dark:text-blue-300 border border-slate-200 dark:border-slate-600 hover:bg-bri-light dark:hover:bg-slate-700 rounded-lg px-4 py-2 transition">Tampilkan semua ${sim.rows.length} bulan</button></div>`);
 }
-
+function amortTableHtml(rows) {
+  const td = 'px-3 py-2 border-t border-slate-100 dark:border-slate-700';
+  const body = rows.map(r => `
+    <tr class="hover:bg-bri-light/40 dark:hover:bg-slate-700/40 transition-colors">
+      <td class="${td}">${r.month}</td>
+      <td class="${td} text-center"><span class="inline-flex items-center justify-center h-4 w-4 rounded bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 text-[10px] font-bold">${r.step}</span></td>
+      <td class="${td}">${fmtMoney(Math.round(r.beginBalance))}</td>
+      <td class="${td} text-bri dark:text-blue-300">${fmtMoney(Math.round(r.interest))}</td>
+      <td class="${td}">${fmtMoney(Math.round(r.principal))}</td>
+      <td class="${td} font-medium">${fmtMoney(Math.round(r.payment))}</td>
+      <td class="${td}">${fmtMoney(Math.round(r.endBalance))}</td>
+    </tr>`).join('');
+  return `<table class="num w-full text-left text-sm text-slate-600 dark:text-slate-300 whitespace-nowrap">
+    <thead class="bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-[11px] uppercase font-semibold">
+      <tr><th class="px-3 py-3">Bln</th><th class="px-3 py-3 text-center">Thp</th><th class="px-3 py-3">Saldo Awal</th><th class="px-3 py-3">Bunga</th><th class="px-3 py-3">Pokok</th><th class="px-3 py-3">Angsuran</th><th class="px-3 py-3">Saldo Akhir</th></tr>
+    </thead><tbody>${body}</tbody></table>`;
+}
 function showFullAmort() {
-  if (!state.result) return;
-  const sim = state.result;
-  let html = '<table><thead><tr><th>Bln</th><th>Tahap</th><th>Saldo Awal</th><th>Bunga</th><th>Pokok</th><th>Angsuran</th><th>Saldo Akhir</th></tr></thead><tbody>';
-  sim.rows.forEach(r => {
-    html += `<tr>
-      <td>${r.month}</td>
-      <td style="text-align:center;"><span class="step-badge">${r.step}</span></td>
-      <td>${fmtMoney(Math.round(r.beginBalance))}</td>
-      <td>${fmtMoney(Math.round(r.interest))}</td>
-      <td>${fmtMoney(Math.round(r.principal))}</td>
-      <td>${fmtMoney(Math.round(r.payment))}</td>
-      <td>${fmtMoney(Math.round(r.endBalance))}</td>
-    </tr>`;
-  });
-  html += '</tbody></table>';
-  document.getElementById('amortTable').innerHTML = html;
+  if (_lastSim) document.getElementById('amortTable').innerHTML = amortTableHtml(_lastSim.rows);
 }
 
 // ─── Init ───
 document.addEventListener('DOMContentLoaded', () => {
+  updateThemeIcon();
   renderSteps();
   recalcAll();
   updatePrincipalWords();
+  updateFeeHint();
 
-  // Update currency symbol on change
-  document.getElementById('currency').addEventListener('change', () => {
-    const s = sym();
-    document.querySelectorAll('#currSymbol,#currSymbol2,#currSymbol3').forEach(el => el.textContent = s);
-    renderSteps();
-    scheduleCalc();
-  });
+  document.getElementById('currency').addEventListener('change', () => { updatePrincipalWords(); updateFeeHint(); scheduleCalc(); });
+  ['oldRate', 'oldTerm'].forEach(id => document.getElementById(id).addEventListener('input', scheduleCalc));
 
-  // Real-time: tiap input Take Over memicu hitung ulang otomatis
-  ['oldRate', 'oldTerm', 'oldPlafon', 'toFee', 'toFeePct'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('input', scheduleCalc);
-  });
-  document.getElementById('toFeePct').addEventListener('input', updateFeePctLabel);
-
-  // Tampilkan hasil langsung saat halaman dibuka (tanpa klik tombol)
   calculate();
 });

@@ -4,224 +4,240 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Kalkulator KPR BRI</title>
-  <meta name="description" content="Kalkulator KPR user-friendly untuk debitur - simulasi angsuran bertahap, perbandingan take over, dan jadwal amortisasi.">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap">
-  <link rel="stylesheet" href="style.css">
+  <meta name="description" content="Kalkulator KPR untuk debitur — simulasi angsuran bertahap, take over, grafik & jadwal amortisasi.">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: {
+        colors: { bri: '#00529C', 'bri-dark': '#003C73', 'bri-light': '#E4EFF9', briorange: '#F58220' },
+        fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] }
+      } }
+    };
+  </script>
+  <script>
+    // terapkan tema sebelum render (hindari kedip)
+    try {
+      const t = localStorage.getItem('kpr-theme');
+      if (t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.classList.add('dark');
+    } catch (e) {}
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
+  <link rel="stylesheet" href="style.css">
 </head>
-<body>
-<header class="hero">
-  <div class="hero-inner">
-    <div class="hero-brand">
-      <div class="hero-logo">
-        <svg width="24" height="24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18V8l8-5 8 5v10"/><path d="M9 18v-6h4v6"/></svg>
-      </div>
-      <div>
-        <h1>Kalkulator KPR</h1>
-        <span class="hero-tag">Untuk Debitur</span>
-      </div>
-    </div>
-    <p>Simulasi kredit pemilikan rumah — hitung angsuran, bandingkan skema take over, dan rencanakan KPR Anda. Hasil diperbarui otomatis saat Anda mengetik.</p>
-  </div>
-</header>
-<div class="container">
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 p-4 md:p-8 transition-colors">
 
-  <!-- INPUT: Tipe KPR & Pinjaman -->
-  <div class="card">
-    <div class="card-title">
-      <span class="icon" style="background:var(--accent-light);color:var(--accent);">📋</span>
-      Data Pinjaman
+  <div class="max-w-7xl mx-auto space-y-6">
+
+    <!-- ═══ HEADER ═══ -->
+    <div class="flex items-center justify-between bg-white dark:bg-slate-800 p-5 md:p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 transition-all">
+      <div class="flex items-center gap-4">
+        <img src="bri-logo.png" alt="BRI" class="h-8 md:h-10 w-auto dark:brightness-0 dark:invert-[.85]">
+        <div class="border-l border-slate-200 dark:border-slate-600 pl-4">
+          <h1 class="text-lg md:text-2xl font-bold text-slate-800 dark:text-white leading-tight">Kalkulator KPR</h1>
+          <p class="text-xs md:text-sm text-slate-500 dark:text-slate-400">Simulasi Pinjaman &amp; Analisis Take Over</p>
+        </div>
+      </div>
+      <button onclick="toggleTheme()" aria-label="Ganti tema" class="h-10 w-10 shrink-0 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-bri-light dark:hover:bg-slate-600 transition-all">
+        <svg id="iconSun" class="hidden" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="9" r="4"/><path d="M9 1v2M9 15v2M1 9h2M15 9h2M3.5 3.5l1.4 1.4M13.1 13.1l1.4 1.4M3.5 14.5l1.4-1.4M13.1 4.9l1.4-1.4"/></svg>
+        <svg id="iconMoon" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 10.5A6.5 6.5 0 1 1 7.5 3a5 5 0 0 0 7.5 7.5z"/></svg>
+      </button>
     </div>
 
-    <div class="grid-2">
-      <div class="form-group">
-        <label>Tipe KPR</label>
-        <select id="kprType" onchange="onKprTypeChange()">
-          <option value="custom">Custom (Atur Manual)</option>
-          <option value="fix-float">Fix &amp; Float</option>
-          <option value="fix-all">Fix All Tenor</option>
-          <option value="jenjang">Jenjang (Graduated)</option>
-          <option value="promo-3-tahun">Promo Fix 3 Tahun</option>
-          <option value="promo-5-tahun">Promo Fix 5 Tahun</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Mata Uang</label>
-        <select id="currency">
-          <option value="Rp" selected>Rp — Rupiah</option>
-          <option value="$">$ — Dollar</option>
-          <option value="€">€ — Euro</option>
-        </select>
-      </div>
-    </div>
+    <!-- ═══ MAIN GRID ═══ -->
+    <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
 
-    <div class="form-group">
-      <label>Jumlah Pinjaman</label>
-      <div class="input-wrap">
-        <span class="input-prefix" id="currSymbol">Rp</span>
-        <input type="text" id="principal" value="1.000.000.000" inputmode="numeric" oninput="formatPrincipal(this)" style="font-size:18px;font-weight:600;">
-      </div>
-      <div style="font-size:12px;color:var(--fg-muted);margin-top:4px;" id="principalWords"></div>
-    </div>
-  </div>
+      <!-- ─── LEFT: INPUTS ─── -->
+      <div class="xl:col-span-4 space-y-6">
 
-  <!-- INPUT: Tahapan Bunga -->
-  <div class="card">
-    <div class="card-title">
-      <span class="icon" style="background:var(--orange-bg);color:var(--orange);">📊</span>
-      Tahapan Suku Bunga
-    </div>
-    <p style="font-size:13px;color:var(--fg-soft);margin:-8px 0 14px;">Ubah bunga atau jangka waktu — angsuran &amp; hasil ikut terhitung otomatis. Atau isi angsuran manual sendiri.</p>
-    <div id="stepsContainer"></div>
-    <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
-      <button class="btn btn-outline btn-sm" onclick="addStep()">＋ Tambah Tahap</button>
-      <button class="btn btn-outline btn-sm" onclick="recalcAll(); scheduleCalc()">⟲ Hitung Ulang Angsuran</button>
-    </div>
-  </div>
-
-  <!-- INPUT: Take Over -->
-  <div class="card">
-    <div class="card-title">
-      <span class="icon" style="background:var(--green-bg);color:var(--green);">🔄</span>
-      Simulasi Take Over (TO)
-    </div>
-    <div class="toggle-row" onclick="toggleTO()">
-      <div class="toggle-track" id="toTrack">
-        <div class="toggle-knob"></div>
-      </div>
-      <span class="toggle-label">Aktifkan perbandingan dengan skema lama</span>
-    </div>
-
-    <div id="toFields" style="display:none;margin-top:16px;" class="fade-in">
-      <div class="grid-2">
-        <div class="form-group">
-          <label>Suku Bunga Skema Lama (%)</label>
-          <div class="input-wrap">
-            <input type="number" id="oldRate" value="9" step="0.01" min="0">
-            <span class="input-suffix">%</span>
+        <!-- Skema KPR Baru -->
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 transition-all duration-200 hover:shadow-md">
+          <h2 class="text-base font-bold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
+            <svg width="18" height="18" fill="none" stroke="#00529C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 14V6l7-4 7 4v8"/><path d="M7 16v-5h4v5"/></svg>
+            Skema KPR Baru
+          </h2>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">Jumlah Pinjaman (Plafon)</label>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-bri dark:text-blue-300 font-bold text-sm" id="curr1">Rp</span>
+                <input type="text" id="principal" value="1.000.000.000" inputmode="numeric"
+                  class="num w-full pl-10 pr-3 py-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-base font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:border-bri focus:ring-2 focus:ring-bri/20 transition"
+                  oninput="formatPrincipal(this)">
+              </div>
+              <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-1" id="principalWords"></p>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">Tipe KPR</label>
+                <select id="kprType" onchange="onKprTypeChange()"
+                  class="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-bri focus:ring-2 focus:ring-bri/20 transition">
+                  <option value="custom">Custom (Manual)</option>
+                  <option value="fix-float">Fix &amp; Float</option>
+                  <option value="fix-all">Fix All Tenor</option>
+                  <option value="jenjang">Jenjang (Step Up)</option>
+                  <option value="promo-3-tahun">Promo Fix 3 Thn</option>
+                  <option value="promo-5-tahun">Promo Fix 5 Thn</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">Mata Uang</label>
+                <select id="currency"
+                  class="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-bri focus:ring-2 focus:ring-bri/20 transition">
+                  <option value="Rp" selected>Rp — Rupiah</option>
+                  <option value="$">$ — Dollar</option>
+                  <option value="€">€ — Euro</option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="form-group">
-          <label>Sisa Jangka Waktu Lama (bulan)</label>
-          <div class="input-wrap">
-            <input type="number" id="oldTerm" value="100" step="1" min="1">
-            <span class="input-suffix">bln</span>
+
+        <!-- Tahapan Suku Bunga -->
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 transition-all duration-200 hover:shadow-md">
+          <h2 class="text-base font-bold text-slate-800 dark:text-slate-100 mb-1 flex items-center gap-2">
+            <svg width="18" height="18" fill="none" stroke="#F58220" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 14 L6 9 L10 11 L16 3"/><path d="M12 3h4v4"/></svg>
+            Tahapan Suku Bunga
+          </h2>
+          <p class="text-[11px] text-slate-400 dark:text-slate-500 mb-3">Ubah bunga/tenor — angsuran &amp; hasil terhitung otomatis. Atau isi angsuran manual.</p>
+          <div id="stepsContainer" class="space-y-2.5"></div>
+          <div class="flex gap-2 mt-3">
+            <button onclick="addStep()" class="flex-1 text-xs font-semibold text-bri dark:text-blue-300 border border-slate-200 dark:border-slate-600 hover:border-bri hover:bg-bri-light dark:hover:bg-slate-700 rounded-lg py-2 transition-all">+ Tambah Tahap</button>
+            <button onclick="recalcAll(); scheduleCalc()" class="flex-1 text-xs font-semibold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg py-2 transition-all">⟲ Hitung Ulang</button>
+          </div>
+        </div>
+
+        <!-- Take Over -->
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 transition-all duration-200 hover:shadow-md">
+          <div class="flex items-center justify-between mb-1">
+            <h2 class="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              <svg width="18" height="18" fill="none" stroke="#F58220" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h12l-3-3M15 13H3l3 3"/></svg>
+              Simulasi Take Over
+            </h2>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="toToggle" class="sr-only peer" onchange="toggleTO()">
+              <div class="w-11 h-6 bg-slate-200 dark:bg-slate-600 rounded-full peer peer-checked:bg-briorange after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
+            </label>
+          </div>
+          <p class="text-[11px] text-slate-400 dark:text-slate-500 mb-3">Bandingkan dengan skema kredit lama.</p>
+
+          <div id="toFields" class="hidden space-y-4 pt-3 border-t border-slate-100 dark:border-slate-700">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">Bunga Lama (%)</label>
+                <input type="number" id="oldRate" value="11.5" step="0.01" min="0"
+                  class="num w-full px-3 py-2.5 bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-900/40 rounded-lg text-sm font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-briorange/20 transition">
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">Sisa Tenor (bln)</label>
+                <input type="number" id="oldTerm" value="100" step="1" min="1"
+                  class="num w-full px-3 py-2.5 bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-900/40 rounded-lg text-sm font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-briorange/20 transition">
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-medium text-slate-600 dark:text-slate-300">Plafon lama beda dari baru?</span>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="customPlafon" class="sr-only peer" onchange="toggleCustomPlafon()">
+                <div class="w-9 h-5 bg-slate-200 dark:bg-slate-600 rounded-full peer peer-checked:bg-bri after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+              </label>
+            </div>
+            <div id="plafonField" class="hidden">
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">Plafon Skema Lama</label>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 font-medium text-sm" id="curr2">Rp</span>
+                <input type="text" id="oldPlafon" value="800.000.000" inputmode="numeric"
+                  class="num w-full pl-10 pr-3 py-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:border-bri transition"
+                  oninput="formatField(this); scheduleCalc()">
+              </div>
+            </div>
+
+            <div class="pt-3 border-t border-slate-100 dark:border-slate-700">
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">Biaya Tambahan Take Over (bulan ke-0)</label>
+              <div class="flex gap-2">
+                <select id="feeMode" onchange="onFeeModeChange()"
+                  class="w-1/3 px-2 py-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-bri transition">
+                  <option value="persen">Persen</option>
+                  <option value="nominal">Nominal</option>
+                </select>
+                <div class="relative w-2/3">
+                  <input type="text" id="feeVal" value="5"
+                    class="num w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:border-bri transition"
+                    oninput="onFeeInput(this)">
+                  <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 text-sm font-medium" id="feeSuffix">%</span>
+                </div>
+              </div>
+              <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-1" id="feeHint"></p>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="form-group">
-        <label class="check-row">
-          <input type="checkbox" id="customPlafon" onchange="toggleCustomPlafon()">
-          <span>Plafon skema lama berbeda dari pinjaman baru</span>
-        </label>
-      </div>
-      <div id="plafonField" style="display:none;" class="form-group fade-in">
-        <label>Plafon Skema Lama</label>
-        <div class="input-wrap">
-          <span class="input-prefix" id="currSymbol2">Rp</span>
-          <input type="text" id="oldPlafon" value="800.000.000" inputmode="numeric" oninput="formatField(this)">
-        </div>
-      </div>
+      <!-- ─── RIGHT: OUTPUTS ─── -->
+      <div class="xl:col-span-8 space-y-6">
 
-      <div class="form-group">
-        <label>Biaya Tambahan Take Over (bulan ke-0)</label>
-        <div style="display:flex;gap:8px;align-items:start;flex-wrap:wrap;">
-          <div class="fee-mode">
-            <button id="feeNominal" class="active" onclick="setFeeMode('nominal')">Nominal</button>
-            <button id="feePersen" onclick="setFeeMode('persen')">Persen (%)</button>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4" id="summaryCards"></div>
+
+        <div id="toBanner"></div>
+
+        <!-- Charts -->
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 transition-all duration-200 hover:shadow-md">
+          <h2 class="text-base font-bold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
+            <svg width="18" height="18" fill="none" stroke="#00529C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v14h14"/><path d="M6 12l3-4 3 2 4-6"/></svg>
+            Visualisasi Data
+          </h2>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div>
+              <p class="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 text-center">Penurunan Saldo Pinjaman</p>
+              <div class="relative h-60"><canvas id="saldoChart"></canvas></div>
+            </div>
+            <div>
+              <p class="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 text-center">Kumulatif Pembayaran (Pokok + Bunga)</p>
+              <div class="relative h-60"><canvas id="kumulatifChart"></canvas></div>
+            </div>
           </div>
         </div>
-        <div id="feeNominalWrap" class="input-wrap" style="margin-top:8px;">
-          <span class="input-prefix" id="currSymbol3">Rp</span>
-          <input type="text" id="toFee" value="50.000.000" inputmode="numeric" oninput="formatField(this)">
-        </div>
-        <div id="feePersenWrap" style="display:none;margin-top:8px;">
-          <div class="input-wrap">
-            <input type="number" id="toFeePct" value="5" step="0.1" min="0">
-            <span class="input-suffix">%</span>
-          </div>
-          <div style="font-size:12px;color:var(--fg-muted);margin-top:4px;" id="feePctValue"></div>
+
+        <!-- Metrics grid -->
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 transition-all duration-200 hover:shadow-md">
+          <h2 class="text-base font-bold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
+            <svg width="18" height="18" fill="none" stroke="#00529C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h14M3 9h14M3 14h9"/></svg>
+            Rincian Parameter
+          </h2>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3" id="metricsGrid"></div>
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- RESULTS -->
-  <div id="results" style="display:none;">
-
-    <!-- Summary stats -->
-    <div class="card header-gradient" id="summaryCard">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
-        <div class="card-title" style="color:#fff;margin-bottom:0;">📈 Ringkasan Hasil</div>
-        <span class="live-badge"><span class="live-dot"></span>Live · update otomatis</span>
-      </div>
-      <div class="stat-grid" id="statGrid"></div>
+    <!-- ═══ RINGKASAN TAHAP ═══ -->
+    <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 transition-all duration-200 hover:shadow-md">
+      <h2 class="text-base font-bold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
+        <svg width="18" height="18" fill="none" stroke="#00529C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h16v14H2zM2 8h16M7 8v9"/></svg>
+        Ringkasan Tahap
+      </h2>
+      <div class="overflow-x-auto rounded-lg border border-slate-100 dark:border-slate-700" id="stepTable"></div>
     </div>
 
-    <!-- Balance Chart -->
-    <div class="card fade-in">
-      <div class="card-title">
-        <span class="icon" style="background:var(--accent-light);color:var(--accent);">📉</span>
-        Saldo dari Waktu ke Waktu
-      </div>
-      <div class="chart-box"><canvas id="balanceChart"></canvas></div>
-    </div>
-
-    <!-- TO Comparison (if enabled) -->
-    <div id="toResults" style="display:none;">
-      <div class="card fade-in">
-        <div class="card-title">
-          <span class="icon" style="background:var(--green-bg);color:var(--green);">⚖️</span>
-          Perbandingan Skema Lama vs Baru
-        </div>
-        <div id="toBanner" style="margin-bottom:16px;"></div>
-        <div class="compare-row" id="compareRow"></div>
-      </div>
-
-      <div class="card fade-in">
-        <div class="card-title">
-          <span class="icon" style="background:var(--orange-bg);color:var(--orange);">📊</span>
-          Kumulatif Pembayaran: Skema Baru vs Lama
-        </div>
-        <div class="chart-box"><canvas id="toChart"></canvas></div>
-      </div>
-    </div>
-
-    <!-- Step Summary Table -->
-    <div class="card fade-in">
-      <div class="collapsible-header" onclick="toggleSection('tableSection','tableArrow')">
-        <div class="card-title" style="margin-bottom:0;">
-          <span class="icon" style="background:var(--accent-light);color:var(--accent);">📋</span>
-          Ringkasan Tahap
-        </div>
-        <span id="tableArrow" style="font-size:18px;color:var(--fg-muted);transition:transform 0.2s;">▼</span>
-      </div>
-      <div id="tableSection" style="margin-top:16px;">
-        <div class="table-wrap" id="stepTable"></div>
-      </div>
-    </div>
-
-    <!-- Full Amortization Schedule -->
-    <div class="card fade-in">
-      <div class="collapsible-header" onclick="toggleSection('scheduleSection','scheduleArrow')">
-        <div class="card-title" style="margin-bottom:0;">
-          <span class="icon" style="background:var(--accent-light);color:var(--accent);">📑</span>
+    <!-- ═══ JADWAL AMORTISASI (collapsible) ═══ -->
+    <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 transition-all duration-200 hover:shadow-md">
+      <div class="flex items-center justify-between cursor-pointer select-none" onclick="toggleAmort()">
+        <h2 class="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+          <svg width="18" height="18" fill="none" stroke="#00529C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h9l3 3v13H4z"/><path d="M8 8h6M8 12h6"/></svg>
           Jadwal Amortisasi Lengkap
-        </div>
-        <span id="scheduleArrow" style="font-size:18px;color:var(--fg-muted);transform:rotate(-90deg);transition:transform 0.2s;">▼</span>
+        </h2>
+        <span id="amortArrow" class="text-slate-400 text-sm transition-transform" style="transform:rotate(-90deg)">▼</span>
       </div>
-      <div id="scheduleSection" style="display:none;margin-top:16px;">
-        <div class="table-wrap" id="amortTable"></div>
+      <div id="amortWrap" class="hidden mt-4">
+        <div class="overflow-x-auto rounded-lg border border-slate-100 dark:border-slate-700" id="amortTable"></div>
       </div>
     </div>
+
+    <p class="text-center text-xs text-slate-400 dark:text-slate-500 pb-4">Simulasi ini bersifat estimasi untuk edukasi debitur. Angka resmi mengacu pada ketentuan bank.</p>
+
   </div>
 
-  <div style="text-align:center;padding:24px 0;font-size:12px;color:var(--fg-muted);">
-    Kalkulator KPR — Simulasi ini bersifat estimasi. Hubungi bank untuk detail resmi.
-  </div>
-</div>
   <script src="script.js"></script>
 </body>
 </html>

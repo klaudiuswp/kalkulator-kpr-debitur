@@ -18,6 +18,13 @@ let state = {
 let balanceChartInstance = null;
 let toChartInstance = null;
 
+// ─── Real-time: debounce perhitungan agar hasil update otomatis saat mengetik ───
+let _calcTimer = null;
+function scheduleCalc() {
+  clearTimeout(_calcTimer);
+  _calcTimer = setTimeout(() => { try { calculate(); } catch (e) { console.error(e); } }, 150);
+}
+
 // ─── Math ───
 function standardPayment(balance, monthlyRate, n) {
   if (n <= 0) return 0;
@@ -125,6 +132,8 @@ function formatPrincipal(el) {
   if (before === 0) np = 0;
   el.setSelectionRange(np, np);
   updatePrincipalWords();
+  recalcAll();
+  scheduleCalc();
 }
 
 function formatField(el) {
@@ -217,13 +226,13 @@ function renderSteps() {
         <div>
           <label style="font-size:11px;">Jangka (bulan)</label>
           <div class="input-wrap">
-            <input type="number" value="${s.months}" min="1" step="1" onchange="updateStep(${i},'months',this.value)">
+            <input type="number" value="${s.months}" min="1" step="1" onchange="updateStep(${i},'months',this.value); recalcAll(); scheduleCalc()">
           </div>
         </div>
         <div>
           <label style="font-size:11px;">Bunga (%/tahun)</label>
           <div class="input-wrap">
-            <input type="number" value="${s.rate}" min="0" step="0.01" onchange="updateStep(${i},'rate',this.value)">
+            <input type="number" value="${s.rate}" min="0" step="0.01" onchange="updateStep(${i},'rate',this.value); recalcAll(); scheduleCalc()">
           </div>
         </div>
         <div>
@@ -231,7 +240,7 @@ function renderSteps() {
           <div class="input-wrap">
             <span class="input-prefix" style="font-size:12px;">${sym()}</span>
             <input type="text" value="${formatThousands(s.payment)}" inputmode="numeric"
-              oninput="formatField(this); updateStep(${i},'payment',parseNum(this.value))">
+              oninput="formatField(this); updateStep(${i},'payment',parseNum(this.value)); scheduleCalc()">
           </div>
         </div>
       </div>
@@ -282,11 +291,13 @@ function toggleTO() {
   state.toEnabled = !state.toEnabled;
   document.getElementById('toTrack').classList.toggle('active', state.toEnabled);
   document.getElementById('toFields').style.display = state.toEnabled ? 'block' : 'none';
+  scheduleCalc();
 }
 
 function toggleCustomPlafon() {
   const checked = document.getElementById('customPlafon').checked;
   document.getElementById('plafonField').style.display = checked ? 'block' : 'none';
+  scheduleCalc();
 }
 
 function setFeeMode(mode) {
@@ -296,6 +307,7 @@ function setFeeMode(mode) {
   document.getElementById('feeNominalWrap').style.display = mode === 'nominal' ? 'flex' : 'none';
   document.getElementById('feePersenWrap').style.display = mode === 'persen' ? 'block' : 'none';
   updateFeePctLabel();
+  scheduleCalc();
 }
 
 function updateFeePctLabel() {
@@ -321,7 +333,7 @@ function toggleSection(sectionId, arrowId) {
 // ─── Calculate ───
 function calculate() {
   const principal = parseNum(document.getElementById('principal').value);
-  if (principal <= 0) { alert('Masukkan jumlah pinjaman'); return; }
+  if (principal <= 0) { document.getElementById('results').style.display = 'none'; return; }
 
   // Update currency symbols
   const s = sym();
@@ -377,8 +389,6 @@ function calculate() {
     document.getElementById('toResults').style.display = 'none';
   }
 
-  // Scroll to results
-  document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ─── Charts ───
@@ -723,7 +733,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const s = sym();
     document.querySelectorAll('#currSymbol,#currSymbol2,#currSymbol3').forEach(el => el.textContent = s);
     renderSteps();
+    scheduleCalc();
   });
 
+  // Real-time: tiap input Take Over memicu hitung ulang otomatis
+  ['oldRate', 'oldTerm', 'oldPlafon', 'toFee', 'toFeePct'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', scheduleCalc);
+  });
   document.getElementById('toFeePct').addEventListener('input', updateFeePctLabel);
+
+  // Tampilkan hasil langsung saat halaman dibuka (tanpa klik tombol)
+  calculate();
 });

@@ -11,17 +11,21 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
 </head>
 <body>
-<div class="container">
-  <!-- Header -->
-  <div style="text-align:center; margin-bottom:28px;">
-    <div style="display:inline-flex;align-items:center;gap:10px;margin-bottom:8px;">
-      <div style="width:40px;height:40px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;">
-        <svg width="22" height="22" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><path d="M3 18V8l8-5 8 5v10"/><path d="M9 18v-6h4v6"/></svg>
+<header class="hero">
+  <div class="hero-inner">
+    <div class="hero-brand">
+      <div class="hero-logo">
+        <svg width="24" height="24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18V8l8-5 8 5v10"/><path d="M9 18v-6h4v6"/></svg>
       </div>
-      <h1 style="font-size:26px;font-weight:700;">Kalkulator KPR</h1>
+      <div>
+        <h1>Kalkulator KPR</h1>
+        <span class="hero-tag">Untuk Debitur</span>
+      </div>
     </div>
-    <p style="color:var(--fg-soft);font-size:14px;max-width:500px;margin:0 auto;">Simulasi kredit pemilikan rumah — hitung angsuran, bandingkan skema, dan rencanakan KPR Anda dengan mudah.</p>
+    <p>Simulasi kredit pemilikan rumah — hitung angsuran, bandingkan skema take over, dan rencanakan KPR Anda. Hasil diperbarui otomatis saat Anda mengetik.</p>
   </div>
+</header>
+<div class="container">
 
   <!-- INPUT: Tipe KPR & Pinjaman -->
   <div class="card">
@@ -68,11 +72,11 @@
       <span class="icon" style="background:var(--orange-bg);color:var(--orange);">📊</span>
       Tahapan Suku Bunga
     </div>
-    <p style="font-size:13px;color:var(--fg-soft);margin:-8px 0 14px;">Atur suku bunga dan jangka waktu tiap tahap. Angsuran dihitung otomatis saat klik "Hitung Ulang".</p>
+    <p style="font-size:13px;color:var(--fg-soft);margin:-8px 0 14px;">Ubah bunga atau jangka waktu — angsuran &amp; hasil ikut terhitung otomatis. Atau isi angsuran manual sendiri.</p>
     <div id="stepsContainer"></div>
     <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
       <button class="btn btn-outline btn-sm" onclick="addStep()">＋ Tambah Tahap</button>
-      <button class="btn btn-primary btn-sm" onclick="recalcAll()">⟲ Hitung Ulang Angsuran</button>
+      <button class="btn btn-outline btn-sm" onclick="recalcAll(); scheduleCalc()">⟲ Hitung Ulang Angsuran</button>
     </div>
   </div>
 
@@ -144,19 +148,15 @@
     </div>
   </div>
 
-  <!-- BUTTON -->
-  <div style="text-align:center;margin-bottom:24px;">
-    <button class="btn btn-primary" onclick="calculate()" style="width:100%;max-width:400px;padding:14px 32px;font-size:16px;">
-      🔍 Hitung Simulasi KPR
-    </button>
-  </div>
-
   <!-- RESULTS -->
   <div id="results" style="display:none;">
 
     <!-- Summary stats -->
-    <div class="card header-gradient fade-in" id="summaryCard">
-      <div class="card-title" style="color:white;">📈 Ringkasan Hasil</div>
+    <div class="card header-gradient" id="summaryCard">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+        <div class="card-title" style="color:#fff;margin-bottom:0;">📈 Ringkasan Hasil</div>
+        <span class="live-badge"><span class="live-dot"></span>Live · update otomatis</span>
+      </div>
       <div class="stat-grid" id="statGrid"></div>
     </div>
 

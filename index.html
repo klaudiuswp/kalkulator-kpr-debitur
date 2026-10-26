@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Kalkulator KPR BRI</title>
+  <meta name="description" content="Kalkulator KPR user-friendly untuk debitur - simulasi angsuran bertahap, perbandingan take over, dan jadwal amortisasi.">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
+</head>
+<body>
+<div class="container">
+  <!-- Header -->
+  <div style="text-align:center; margin-bottom:28px;">
+    <div style="display:inline-flex;align-items:center;gap:10px;margin-bottom:8px;">
+      <div style="width:40px;height:40px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;">
+        <svg width="22" height="22" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><path d="M3 18V8l8-5 8 5v10"/><path d="M9 18v-6h4v6"/></svg>
+      </div>
+      <h1 style="font-size:26px;font-weight:700;">Kalkulator KPR</h1>
+    </div>
+    <p style="color:var(--fg-soft);font-size:14px;max-width:500px;margin:0 auto;">Simulasi kredit pemilikan rumah — hitung angsuran, bandingkan skema, dan rencanakan KPR Anda dengan mudah.</p>
+  </div>
+
+  <!-- INPUT: Tipe KPR & Pinjaman -->
+  <div class="card">
+    <div class="card-title">
+      <span class="icon" style="background:var(--accent-light);color:var(--accent);">📋</span>
+      Data Pinjaman
+    </div>
+
+    <div class="grid-2">
+      <div class="form-group">
+        <label>Tipe KPR</label>
+        <select id="kprType" onchange="onKprTypeChange()">
+          <option value="custom">Custom (Atur Manual)</option>
+          <option value="fix-float">Fix &amp; Float</option>
+          <option value="fix-all">Fix All Tenor</option>
+          <option value="jenjang">Jenjang (Graduated)</option>
+          <option value="promo-3-tahun">Promo Fix 3 Tahun</option>
+          <option value="promo-5-tahun">Promo Fix 5 Tahun</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Mata Uang</label>
+        <select id="currency">
+          <option value="Rp" selected>Rp — Rupiah</option>
+          <option value="$">$ — Dollar</option>
+          <option value="€">€ — Euro</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Jumlah Pinjaman</label>
+      <div class="input-wrap">
+        <span class="input-prefix" id="currSymbol">Rp</span>
+        <input type="text" id="principal" value="1.000.000.000" inputmode="numeric" oninput="formatPrincipal(this)" style="font-size:18px;font-weight:600;">
+      </div>
+      <div style="font-size:12px;color:var(--fg-muted);margin-top:4px;" id="principalWords"></div>
+    </div>
+  </div>
+
+  <!-- INPUT: Tahapan Bunga -->
+  <div class="card">
+    <div class="card-title">
+      <span class="icon" style="background:var(--orange-bg);color:var(--orange);">📊</span>
+      Tahapan Suku Bunga
+    </div>
+    <p style="font-size:13px;color:var(--fg-soft);margin:-8px 0 14px;">Atur suku bunga dan jangka waktu tiap tahap. Angsuran dihitung otomatis saat klik "Hitung Ulang".</p>
+    <div id="stepsContainer"></div>
+    <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
+      <button class="btn btn-outline btn-sm" onclick="addStep()">＋ Tambah Tahap</button>
+      <button class="btn btn-primary btn-sm" onclick="recalcAll()">⟲ Hitung Ulang Angsuran</button>
+    </div>
+  </div>
+
+  <!-- INPUT: Take Over -->
+  <div class="card">
+    <div class="card-title">
+      <span class="icon" style="background:var(--green-bg);color:var(--green);">🔄</span>
+      Simulasi Take Over (TO)
+    </div>
+    <div class="toggle-row" onclick="toggleTO()">
+      <div class="toggle-track" id="toTrack">
+        <div class="toggle-knob"></div>
+      </div>
+      <span class="toggle-label">Aktifkan perbandingan dengan skema lama</span>
+    </div>
+
+    <div id="toFields" style="display:none;margin-top:16px;" class="fade-in">
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Suku Bunga Skema Lama (%)</label>
+          <div class="input-wrap">
+            <input type="number" id="oldRate" value="9" step="0.01" min="0">
+            <span class="input-suffix">%</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Sisa Jangka Waktu Lama (bulan)</label>
+          <div class="input-wrap">
+            <input type="number" id="oldTerm" value="100" step="1" min="1">
+            <span class="input-suffix">bln</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="check-row">
+          <input type="checkbox" id="customPlafon" onchange="toggleCustomPlafon()">
+          <span>Plafon skema lama berbeda dari pinjaman baru</span>
+        </label>
+      </div>
+      <div id="plafonField" style="display:none;" class="form-group fade-in">
+        <label>Plafon Skema Lama</label>
+        <div class="input-wrap">
+          <span class="input-prefix" id="currSymbol2">Rp</span>
+          <input type="text" id="oldPlafon" value="800.000.000" inputmode="numeric" oninput="formatField(this)">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Biaya Tambahan Take Over (bulan ke-0)</label>
+        <div style="display:flex;gap:8px;align-items:start;flex-wrap:wrap;">
+          <div class="fee-mode">
+            <button id="feeNominal" class="active" onclick="setFeeMode('nominal')">Nominal</button>
+            <button id="feePersen" onclick="setFeeMode('persen')">Persen (%)</button>
+          </div>
+        </div>
+        <div id="feeNominalWrap" class="input-wrap" style="margin-top:8px;">
+          <span class="input-prefix" id="currSymbol3">Rp</span>
+          <input type="text" id="toFee" value="50.000.000" inputmode="numeric" oninput="formatField(this)">
+        </div>
+        <div id="feePersenWrap" style="display:none;margin-top:8px;">
+          <div class="input-wrap">
+            <input type="number" id="toFeePct" value="5" step="0.1" min="0">
+            <span class="input-suffix">%</span>
+          </div>
+          <div style="font-size:12px;color:var(--fg-muted);margin-top:4px;" id="feePctValue"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BUTTON -->
+  <div style="text-align:center;margin-bottom:24px;">
+    <button class="btn btn-primary" onclick="calculate()" style="width:100%;max-width:400px;padding:14px 32px;font-size:16px;">
+      🔍 Hitung Simulasi KPR
+    </button>
+  </div>
+
+  <!-- RESULTS -->
+  <div id="results" style="display:none;">
+
+    <!-- Summary stats -->
+    <div class="card header-gradient fade-in" id="summaryCard">
+      <div class="card-title" style="color:white;">📈 Ringkasan Hasil</div>
+      <div class="stat-grid" id="statGrid"></div>
+    </div>
+
+    <!-- Balance Chart -->
+    <div class="card fade-in">
+      <div class="card-title">
+        <span class="icon" style="background:var(--accent-light);color:var(--accent);">📉</span>
+        Saldo dari Waktu ke Waktu
+      </div>
+      <div class="chart-box"><canvas id="balanceChart"></canvas></div>
+    </div>
+
+    <!-- TO Comparison (if enabled) -->
+    <div id="toResults" style="display:none;">
+      <div class="card fade-in">
+        <div class="card-title">
+          <span class="icon" style="background:var(--green-bg);color:var(--green);">⚖️</span>
+          Perbandingan Skema Lama vs Baru
+        </div>
+        <div id="toBanner" style="margin-bottom:16px;"></div>
+        <div class="compare-row" id="compareRow"></div>
+      </div>
+
+      <div class="card fade-in">
+        <div class="card-title">
+          <span class="icon" style="background:var(--orange-bg);color:var(--orange);">📊</span>
+          Kumulatif Pembayaran: Skema Baru vs Lama
+        </div>
+        <div class="chart-box"><canvas id="toChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Step Summary Table -->
+    <div class="card fade-in">
+      <div class="collapsible-header" onclick="toggleSection('tableSection','tableArrow')">
+        <div class="card-title" style="margin-bottom:0;">
+          <span class="icon" style="background:var(--accent-light);color:var(--accent);">📋</span>
+          Ringkasan Tahap
+        </div>
+        <span id="tableArrow" style="font-size:18px;color:var(--fg-muted);transition:transform 0.2s;">▼</span>
+      </div>
+      <div id="tableSection" style="margin-top:16px;">
+        <div class="table-wrap" id="stepTable"></div>
+      </div>
+    </div>
+
+    <!-- Full Amortization Schedule -->
+    <div class="card fade-in">
+      <div class="collapsible-header" onclick="toggleSection('scheduleSection','scheduleArrow')">
+        <div class="card-title" style="margin-bottom:0;">
+          <span class="icon" style="background:var(--accent-light);color:var(--accent);">📑</span>
+          Jadwal Amortisasi Lengkap
+        </div>
+        <span id="scheduleArrow" style="font-size:18px;color:var(--fg-muted);transform:rotate(-90deg);transition:transform 0.2s;">▼</span>
+      </div>
+      <div id="scheduleSection" style="display:none;margin-top:16px;">
+        <div class="table-wrap" id="amortTable"></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center;padding:24px 0;font-size:12px;color:var(--fg-muted);">
+    Kalkulator KPR — Simulasi ini bersifat estimasi. Hubungi bank untuk detail resmi.
+  </div>
+</div>
+  <script src="script.js"></script>
+</body>
+</html>

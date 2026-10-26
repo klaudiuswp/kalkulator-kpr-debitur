@@ -177,7 +177,7 @@ function onKprTypeChange() {
 function renderSteps() {
   const c = document.getElementById('stepsContainer');
   const n = state.steps.length;
-  const inp = 'num w-full px-2 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-md text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-bri transition';
+  const inp = 'num w-full px-2 py-2 bg-blue-50 dark:bg-slate-800 border border-blue-200 dark:border-slate-600 rounded-md text-sm font-semibold text-slate-800 dark:text-slate-100 focus:outline-none focus:border-bri focus:bg-white dark:focus:bg-slate-900 transition';
   const lab = 'block text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1';
   c.innerHTML = state.steps.map((s, i) => `
     <div class="bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 border-l-[3px] border-l-bri rounded-lg p-3 transition-all hover:border-l-briorange">
@@ -425,7 +425,12 @@ function renderToBanner(sim, to) {
   else if (to.efisiensi < 0) { cls = 'bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 border-orange-100 dark:border-orange-900/40'; msg = `⚠️ <b>Take over lebih mahal</b> sebesar <b>${fmtMoney(Math.round(Math.abs(to.efisiensi)))}</b>. Pertimbangkan manfaat lain (bunga awal rendah).`; }
   else { cls = 'bg-bri-light dark:bg-blue-900/20 text-bri dark:text-blue-300 border-blue-100 dark:border-blue-900/40'; msg = `Total pembayaran skema lama & baru hampir sama.`; }
   let bep = '';
-  if (to.meets.length) bep = `<div class="mt-2 text-xs">📍 Titik impas (BEP): <b>bulan ke-${Math.round(to.meets[0])}</b> (${monthsToText(Math.round(to.meets[0]))})</div>`;
+  if (to.meets.length) {
+    const bm = Math.round(to.meets[0]);
+    const after = Math.min(bm + 1, to.horizon);
+    const newCheaper = to.cumNew[after] < to.cumOld[after];
+    bep = `<div class="mt-2 text-xs opacity-90">📍 <b>Titik impas bulan ke-${bm}</b> (${monthsToText(bm)}) — sejak sini, total yang sudah Anda bayar di skema baru ${newCheaper ? 'mulai <b>lebih murah</b>' : 'jadi <b>lebih mahal</b>'} dibanding bertahan di skema lama.</div>`;
+  }
   el.innerHTML = `<div class="rounded-2xl border px-5 py-4 text-sm font-medium ${cls}">${msg}${bep}</div>`;
 }
 
@@ -486,7 +491,7 @@ function renderCharts(sim, to) {
 function renderStepTable(sim) {
   const td = 'px-3 py-2.5 border-t border-slate-100 dark:border-slate-700';
   let rows = sim.stepSummaries.map(r => `
-    <tr class="hover:bg-bri-light/40 dark:hover:bg-slate-700/40 transition-colors">
+    <tr class="hover:bg-blue-50 dark:hover:bg-slate-700/60 transition-colors">
       <td class="${td} text-center"><span class="inline-flex items-center justify-center h-5 w-5 rounded bg-bri text-white text-[11px] font-bold">${r.step}</span></td>
       <td class="${td}">${r.months}</td>
       <td class="${td}">${fmtPct(r.rate)}</td>
@@ -522,7 +527,7 @@ function renderAmort(sim) {
 function amortTableHtml(rows) {
   const td = 'px-3 py-2 border-t border-slate-100 dark:border-slate-700';
   const body = rows.map(r => `
-    <tr class="hover:bg-bri-light/40 dark:hover:bg-slate-700/40 transition-colors">
+    <tr class="hover:bg-blue-50 dark:hover:bg-slate-700/60 transition-colors">
       <td class="${td}">${r.month}</td>
       <td class="${td} text-center"><span class="inline-flex items-center justify-center h-4 w-4 rounded bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 text-[10px] font-bold">${r.step}</span></td>
       <td class="${td}">${fmtMoney(Math.round(r.beginBalance))}</td>

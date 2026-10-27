@@ -1,0 +1,12 @@
+tier,key,name,min_months,segments
+no_tier,kawan,"Kawan Fixed All Tenor (SB 5,00%)",12,300:5
+no_tier,fixed1,Fixed 1 Thn,36,12:3.17|288:12.5
+no_tier,fixed3_10,Fixed 3 Thn (min 10 Thn),120,36:3.57|264:12.5
+no_tier,fixed3_5,Fixed 3 Thn (min 5 Thn),60,36:6.17|264:12.5
+no_tier,fixed5_10,Fixed 5 Thn (min 10 Thn),120,60:5.57|240:12.5
+no_tier,alltenor4,"Fixed All Tenor (SB 7,25%)",12,48:7.25
+no_tier,alltenor10,"Fixed All Tenor (SB 7,75%)",49,120:7.75
+no_tier,alltenor_,"Fixed All Tenor (SB 8,00%)",121,300:8.0
+no_tier,berjenjang10,Berjenjang 10 Thn,120,12:3.77|24:5.77|36:7.87|48:9.87|180:12.5
+no_tier,berjenjang15,Berjenjang 15 Thn,180,12:3.77|24:5.77|48:8.17|96:10.71|120:12.5
+no_tier,berjenjang20,Berjenjang 20 Thn,240,12:3.71|24:5.71|84:8.71|120:10.71|60:12.5

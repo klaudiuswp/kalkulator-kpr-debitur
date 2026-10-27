@@ -8,6 +8,8 @@ if (window.Chart && window['chartjs-plugin-annotation']) {
 }
 
 // ─── State ───
+
+//test ditra masuk
 let state = {
   steps: [
     { months: 36, rate: 3, payment: 0 },

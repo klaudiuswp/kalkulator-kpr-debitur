@@ -107,7 +107,7 @@ function amortizeSingle(principal, annualRate, months) {
 }
 
 // ─── Formatting ───
-function sym() { return document.getElementById('currency').value; }
+function sym() { return 'Rp'; }
 function fmtMoney(v) {
   if (v == null || !isFinite(v)) return '—';
   const neg = v < 0;
@@ -159,20 +159,95 @@ function monthsToText(m) {
   return s || '0 bln';
 }
 
-// ─── KPR presets ───
-const KPR_PRESETS = {
-  'fix-float': [{ months: 36, rate: 3.88 }, { months: 24, rate: 6.5 }, { months: 120, rate: 9.35 }],
-  'fix-all': [{ months: 180, rate: 8.25 }],
-  'jenjang': [{ months: 12, rate: 2.75 }, { months: 12, rate: 4.5 }, { months: 12, rate: 6.25 }, { months: 12, rate: 8.0 }, { months: 132, rate: 9.35 }],
-  'promo-3-tahun': [{ months: 36, rate: 3.0 }, { months: 144, rate: 9.35 }],
-  'promo-5-tahun': [{ months: 60, rate: 5.25 }, { months: 120, rate: 9.35 }],
-};
-function onKprTypeChange() {
-  const type = document.getElementById('kprType').value;
-  if (type === 'custom') return;
-  const p = KPR_PRESETS[type]; if (!p) return;
-  state.steps = p.map(x => ({ months: x.months, rate: x.rate, payment: 0 }));
+// ─── Program KPR — dimuat dari programs.csv (edit file itu untuk ubah konfigurasi) ───
+let PROGRAMS = {};
+let currentTier = 'no_tier';
+
+function currentProgram() {
+  const key = document.getElementById('program').value;
+  return key ? PROGRAMS[currentTier][key] : null;
+}
+function programMaxMonths(p) { return p.segments.reduce((a, s) => a + s[0], 0); }
+function buildProgramSteps(p, tenor) {
+  const out = []; let left = tenor;
+  for (const [months, rate] of p.segments) {
+    if (left <= 0) break;
+    const m = Math.min(months, left);
+    out.push({ months: m, rate: +Number(rate).toFixed(4), payment: 0 });
+    left -= m;
+  }
+  return out;
+}
+function parseCsvLine(line) {
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (q) { if (c === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { out.push(cur.trim()); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur.trim());
+  return out;
+}
+function parseProgramsCsv(text) {
+  const res = {}; let header = null;
+  text.replace(/^\uFEFF/, '').split(/\r?\n/).forEach((raw, ln) => {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) return;
+    const cols = parseCsvLine(line);
+    if (!header) { header = cols.map(c => c.toLowerCase()); return; }
+    const row = {}; header.forEach((h, i) => row[h] = cols[i] || '');
+    const segments = row.segments.split('|').map(s => s.split(':').map(Number)).filter(x => x.length === 2 && x[0] > 0 && isFinite(x[1]));
+    if (!row.key || !segments.length) { console.warn('programs.csv baris ' + (ln + 1) + ' dilewati'); return; }
+    const tier = row.tier || 'no_tier';
+    (res[tier] = res[tier] || {})[row.key] = { name: row.name || row.key, min_months: Number(row.min_months) || 1, segments };
+  });
+  return res;
+}
+async function loadPrograms() {
+  const sel = document.getElementById('program'), hint = document.getElementById('programHint');
+  try {
+    const r = await fetch('programs.csv', { cache: 'no-cache' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    PROGRAMS = parseProgramsCsv(await r.text());
+    const list = PROGRAMS[currentTier] || {};
+    Object.keys(list).forEach(k => {
+      const o = document.createElement('option');
+      o.value = k; o.textContent = list[k].name;
+      sel.appendChild(o);
+    });
+  } catch (e) {
+    console.error(e);
+    hint.textContent = 'programs.csv gagal dimuat — buka lewat web server (mis. python -m http.server), bukan klik dua kali.';
+  }
+}
+function updateProgramHint() {
+  const p = currentProgram(), hint = document.getElementById('programHint'), t = document.getElementById('tenor');
+  if (!p) { hint.textContent = ''; t.disabled = true; t.value = ''; t.removeAttribute('min'); t.removeAttribute('max'); return; }
+  const mx = programMaxMonths(p);
+  t.disabled = false; t.min = p.min_months; t.max = mx;
+  hint.textContent = 'Tenor ' + p.min_months + '–' + mx + ' bln (' + monthsToText(p.min_months) + ' – ' + monthsToText(mx) + ')';
+}
+function applyProgram(tenor) {
+  const p = currentProgram(); if (!p) return;
+  const mx = programMaxMonths(p);
+  tenor = Math.min(mx, Math.max(p.min_months, Math.round(Number(tenor) || mx)));
+  document.getElementById('tenor').value = tenor;
+  state.steps = buildProgramSteps(p, tenor);
+  updateProgramHint();
   renderSteps(); recalcAll(); scheduleCalc();
+}
+function onProgramChange() {
+  const p = currentProgram();
+  if (!p) { updateProgramHint(); return; }
+  applyProgram(programMaxMonths(p));
+}
+function onTenorChange() { applyProgram(document.getElementById('tenor').value); }
+// ubah manual tahap → lepas dari program
+function markManual() {
+  const sel = document.getElementById('program');
+  if (sel.value) { sel.value = ''; updateProgramHint(); }
 }
 
 // ─── Steps UI ───
@@ -199,14 +274,17 @@ function renderSteps() {
 function addStep() {
   if (state.steps.length >= 7) return;
   const last = state.steps.length ? state.steps[state.steps.length - 1].rate : 0;
+  markManual();
   state.steps.push({ months: 12, rate: last, payment: 0 });
   renderSteps(); recalcAll(); scheduleCalc();
 }
 function removeStep(i) {
   if (state.steps.length <= 1) return;
+  markManual();
   state.steps.splice(i, 1); renderSteps(); recalcAll(); scheduleCalc();
 }
 function updateStep(i, key, val) {
+  if (key === 'months' || key === 'rate') markManual();
   if (key === 'months') state.steps[i].months = Math.max(1, Math.round(Number(val) || 1));
   else if (key === 'rate') state.steps[i].rate = Number(val) || 0;
   else if (key === 'payment') state.steps[i].payment = Number(val) || 0;
@@ -334,6 +412,7 @@ function calculate() {
   renderStepTable(sim);
   renderAmort(sim);
   renderToBanner(sim, to);
+  saveState();
 }
 
 // ─── Render: summary cards ───
@@ -346,7 +425,7 @@ function renderSummaryCards(sim, to, principal) {
   let html = `
     <div class="relative overflow-hidden rounded-2xl p-5 text-white shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5" style="background:linear-gradient(135deg,#0072C6,#00529C)">
       <div class="absolute -right-6 -top-6 w-24 h-24 bg-white/10 rounded-full"></div>
-      <p class="text-blue-100 text-xs font-semibold mb-1">Angsuran Awal ${multi ? '(Tahap 1)' : ''}</p>
+      <p class="text-blue-100 text-xs font-semibold mb-1">Angsuran Baru ${multi ? '(Tahap 1)' : ''}</p>
       <h3 class="text-2xl font-bold mb-1 num">${fmtMoney(firstPmt)}<span class="text-xs font-normal"> /bln</span></h3>
       <p class="text-[11px] text-blue-200">${multi ? 'Naik bertahap · ' : ''}Total bunga ${fmtCompact(sim.totalInterest)}</p>
     </div>`;
@@ -385,36 +464,90 @@ function renderSummaryCards(sim, to, principal) {
   document.getElementById('summaryCards').innerHTML = html;
 }
 
-// ─── Render: metrics grid ───
+// Keep "Rp" attached to the number, and measure text length for auto-fit
+function fitText(v) {
+  const s = String(v).replace(/Rp /g, 'Rp\u00A0');
+  return { s, len: [...s].length };
+}
 function metricCell(label, value, o) {
   o = o || {};
   const bg = o.bg || 'bg-slate-50 dark:bg-slate-700/50';
   const lc = o.lc || 'text-slate-500 dark:text-slate-400';
   const vc = o.vc || 'text-slate-800 dark:text-slate-100';
-  return `<div class="p-3 rounded-lg ${bg} transition-all duration-200 hover:-translate-y-0.5">
-    <p class="text-[10px] font-bold uppercase mb-1 ${lc}">${label}</p>
-    <p class="text-sm font-semibold num ${vc}">${value}</p></div>`;
+  const f = fitText(value);
+  return `<div class="fit-card p-3 rounded-lg ${bg} transition-all duration-200 hover:-translate-y-0.5">
+    <p class="text-[10px] font-bold uppercase mb-1 break-words ${lc}">${label}</p>
+    <p class="fit-val font-semibold num ${vc}" style="--len:${f.len};--max:.875rem">${f.s}</p></div>`;
+}
+function bigCell(label, value, o) {
+  o = o || {};
+  const bg = o.bg || 'bg-slate-50 dark:bg-slate-700/50';
+  const lc = o.lc || 'text-slate-500 dark:text-slate-400';
+  const vc = o.vc || 'text-slate-800 dark:text-slate-100';
+  const sc = o.sc || 'text-slate-400 dark:text-slate-500';
+  const f = fitText(value);
+  return `<div class="fit-card p-4 rounded-xl ${bg} transition-all duration-200 hover:-translate-y-0.5">
+    <p class="text-[10px] sm:text-[11px] font-bold uppercase mb-1.5 break-words ${lc}">${label}</p>
+    <p class="fit-val font-bold num ${vc}" style="--len:${f.len};--max:1.125rem">${f.s}</p>
+    ${o.sub ? `<p class="text-[11px] mt-1 break-words ${sc}">${o.sub}</p>` : ''}</div>`;
+}
+function metricSection(title, dot, cells, cols) {
+  return `<div>
+    <p class="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300 mb-2"><span class="h-2 w-2 rounded-full ${dot}"></span>${title}</p>
+    <div class="grid grid-cols-2 ${cols || 'lg:grid-cols-4'} gap-3">${cells}</div></div>`;
 }
 function renderMetrics(sim, to, principal) {
   const balloon = Math.abs(sim.endingBalance) > 1;
-  let html =
-    metricCell('Total Jangka Waktu', sim.totalMonths + ' bln (' + monthsToText(sim.totalMonths) + ')') +
-    metricCell('Total Pembayaran', fmtCompact(sim.totalPayments)) +
-    metricCell('Total Bunga', fmtCompact(sim.totalInterest), { vc: 'text-bri dark:text-blue-300' }) +
-    metricCell('IRR Bank (Tahunan)', fmtPct(sim.irrNominal), { bg: 'bg-bri-light dark:bg-blue-900/20', lc: 'text-bri dark:text-blue-300', vc: 'text-bri dark:text-blue-300' }) +
-    metricCell('IRR Efektif', fmtPct(sim.irrEfektif)) +
-    metricCell('Sisa Saldo Akhir', balloon ? fmtCompact(sim.endingBalance) : sym() + ' 0',
-      balloon ? { vc: 'text-orange-600 dark:text-orange-400' } : { vc: 'text-emerald-600 dark:text-emerald-400' });
+  const steps = sim.stepSummaries;
+  const firstPmt = steps[0] ? steps[0].payment : 0;
+  const lastPmt = steps.length ? steps[steps.length - 1].payment : 0;
+  const multi = steps.length > 1;
+  const pctBunga = principal > 0 ? sim.totalInterest / principal * 100 : 0;
+  const blue = { bg: 'bg-bri-light dark:bg-blue-900/20', lc: 'text-bri dark:text-blue-300', vc: 'text-bri dark:text-blue-300', sc: 'text-slate-500 dark:text-slate-400' };
+  const org = { bg: 'bg-orange-50 dark:bg-orange-900/20', lc: 'text-orange-600 dark:text-orange-300', vc: 'text-slate-800 dark:text-slate-100', sc: 'text-slate-500 dark:text-slate-400' };
+
+  // 1) Skema baru
+  let html = metricSection(to ? 'Skema Baru (Setelah Take Over)' : 'Skema KPR', 'bg-bri',
+    bigCell('Total Jangka Waktu', sim.totalMonths + ' bln', Object.assign({ sub: monthsToText(sim.totalMonths) }, blue)) +
+    bigCell('Total Pembayaran', fmtMoney(Math.round(sim.totalPayments)), Object.assign({ sub: balloon ? 'Belum termasuk sisa saldo ' + fmtCompact(sim.endingBalance) : '' }, blue)) +
+    bigCell('Total Bunga', fmtMoney(Math.round(sim.totalInterest)), Object.assign({ sub: fmtPct(pctBunga, 1) + ' dari pokok' }, blue)) +
+    bigCell(multi ? 'Angsuran (Tahap 1)' : 'Angsuran', fmtMoney(Math.round(firstPmt)) + ' /bln', Object.assign({ sub: multi ? 'Tahap akhir ' + fmtMoney(Math.round(lastPmt)) + ' /bln' : '' }, blue)));
 
   if (to) {
+    // 2) Skema lama (before)
+    html += metricSection('Skema Lama (Sebelum Take Over)', 'bg-briorange',
+      bigCell('Total Jangka Waktu Sebelum', to.oldMonths + ' bln', Object.assign({ sub: monthsToText(to.oldMonths) }, org)) +
+      bigCell('Total Pembayaran Sebelum', fmtMoney(Math.round(to.oldTotal)), org) +
+      bigCell('Total Bunga Sebelum', fmtMoney(Math.round(to.oldTotalBunga)), Object.assign({ sub: to.oldPrincipal > 0 ? fmtPct(to.oldTotalBunga / to.oldPrincipal * 100, 1) + ' dari pokok' : '' }, org)) +
+      bigCell('Angsuran Sebelum', fmtMoney(Math.round(to.oldPmt)) + ' /bln', Object.assign({ sub: 'Plafon lama ' + fmtCompact(to.oldPrincipal) }, org)));
+
+    // 3) Perbandingan
+    const selPmt = to.oldPmt - firstPmt;
+    const pmtGood = selPmt >= 0;
     const effGood = to.efisiensi >= 0;
-    html +=
-      metricCell('Plafon Skema Lama', fmtCompact(to.oldPrincipal), { bg: 'bg-orange-50 dark:bg-orange-900/20', lc: 'text-orange-600 dark:text-orange-300' }) +
-      metricCell('Total Bayar Lama', fmtCompact(to.oldTotal), { bg: 'bg-orange-50 dark:bg-orange-900/20', lc: 'text-orange-600 dark:text-orange-300' }) +
-      metricCell('Biaya TO (Bulan 0)', fmtCompact(to.fee), { bg: 'bg-red-50 dark:bg-red-900/20', lc: 'text-red-600 dark:text-red-300', vc: 'text-red-600 dark:text-red-300' }) +
-      metricCell(effGood ? 'Penghematan Total' : 'Kerugian Total', fmtCompact(Math.abs(to.efisiensi)),
-        { bg: effGood ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'bg-red-50 dark:bg-red-900/20', lc: effGood ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300', vc: effGood ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300' });
+    const good = { bg: 'bg-emerald-50 dark:bg-emerald-900/20', lc: 'text-emerald-600 dark:text-emerald-300', vc: 'text-emerald-600 dark:text-emerald-300', sc: 'text-slate-500 dark:text-slate-400' };
+    const bad = { bg: 'bg-red-50 dark:bg-red-900/20', lc: 'text-red-600 dark:text-red-300', vc: 'text-red-600 dark:text-red-300', sc: 'text-slate-500 dark:text-slate-400' };
+    html += metricSection('Perbandingan Take Over', 'bg-emerald-500',
+  bigCell('Keuntungan Angsuran (vs Existing)', (pmtGood ? '▼ ' : '▲ ') + fmtMoney(Math.round(Math.abs(selPmt))) + ' /bln',
+    Object.assign({ sub: (pmtGood ? 'Angsuran lebih ringan' : 'Angsuran lebih berat') + (multi ? ' (acuan Tahap 1)' : '') }, pmtGood ? good : bad)) +
+  bigCell('Selisih Bayar Total', (effGood ? 'Hemat ' : 'Lebih mahal ') + fmtMoney(Math.round(Math.abs(to.efisiensi))),
+    Object.assign({ sub: 'Total lama − total baru, termasuk biaya TO ' + fmtCompact(to.fee) + (balloon ? ' & sisa saldo' : '') }, effGood ? good : bad)),
+  'lg:grid-cols-2');
   }
+
+  // 4) Detail lainnya (sekunder)
+  let more =
+    metricCell('IRR Bank (Tahunan)', fmtPct(sim.irrNominal), { vc: 'text-bri dark:text-blue-300' }) +
+    metricCell('IRR Efektif', fmtPct(sim.irrEfektif), { vc: 'text-bri dark:text-blue-300' }) 
+    // +
+    // metricCell('Sisa Saldo Akhir', balloon ? fmtCompact(sim.endingBalance) : sym() + ' 0',
+    //   balloon ? { vc: 'text-orange-600 dark:text-orange-400' } : { vc: 'text-emerald-600 dark:text-emerald-400' })
+      ;
+  if (to) more += metricCell('Biaya TO (Bulan 0)', fmtCompact(to.fee), { vc: 'text-bri dark:text-blue-300' });
+  html += `<div class="pt-4 border-t border-slate-100 dark:border-slate-700">
+    <p class="text-xs font-bold text-slate-400 dark:text-slate-500 mb-2">Detail Lainnya</p>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${more}</div></div>`;
+
   document.getElementById('metricsGrid').innerHTML = html;
 }
 
@@ -483,8 +616,9 @@ function renderCharts(sim, to) {
     },
   });
 
+  const saldoEl = document.getElementById('saldoChart'); // bisa tidak ada (dikomentari di HTML)
   if (saldoChart) { saldoChart.data.datasets = dsSaldo; saldoChart.options = baseOpts(false); saldoChart.update(); }
-  else { saldoChart = new Chart(document.getElementById('saldoChart'), { type: 'line', data: { datasets: dsSaldo }, options: baseOpts(false) }); }
+  else if (saldoEl) { saldoChart = new Chart(saldoEl, { type: 'line', data: { datasets: dsSaldo }, options: baseOpts(false) }); }
   if (kumulatifChart) { kumulatifChart.data.datasets = dsKum; kumulatifChart.options = baseOpts(true); kumulatifChart.update(); }
   else { kumulatifChart = new Chart(document.getElementById('kumulatifChart'), { type: 'line', data: { datasets: dsKum }, options: baseOpts(true) }); }
 }
@@ -547,16 +681,90 @@ function showFullAmort() {
   if (_lastSim) document.getElementById('amortTable').innerHTML = amortTableHtml(_lastSim.rows);
 }
 
+// ─── Simpan input terakhir (localStorage) ───
+const STORE_KEY = 'kpr-state-v1';
+let _stateReady = false;   // baru boleh menyimpan setelah program selesai dimuat
+let _saved = null;         // data tersimpan yang dibaca saat start
+function saveState() {
+  if (!_stateReady) return;
+  const v = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const c = id => { const el = document.getElementById(id); return !!(el && el.checked); };
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      v: 1,
+      principal: v('principal'), program: v('program'), tenor: v('tenor'),
+      steps: state.steps,
+      toEnabled: state.toEnabled, oldRate: v('oldRate'), oldTerm: v('oldTerm'),
+      customPlafon: c('customPlafon'), oldPlafon: v('oldPlafon'),
+      feeMode: state.feeMode, feeVal: v('feeVal'),
+    }));
+  } catch (e) {}
+}
+function validSteps(a) {
+  return Array.isArray(a) && a.length >= 1 && a.length <= 7 &&
+    a.every(s => s && Number.isFinite(+s.months) && +s.months >= 1 && +s.months <= 600 && Number.isFinite(+s.rate) && +s.rate >= 0 && Number.isFinite(+s.payment));
+}
+// kembalikan true jika tahapan bunga berhasil dipulihkan
+function restoreState() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); } catch (e) {}
+  if (!s || s.v !== 1) return false;
+  _saved = s;
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val != null && val !== '') el.value = val; };
+
+  if (parseNum(s.principal) > 0) set('principal', formatThousands(parseNum(s.principal)));
+  set('oldRate', s.oldRate); set('oldTerm', s.oldTerm);
+
+  document.getElementById('customPlafon').checked = !!s.customPlafon;
+  document.getElementById('plafonField').classList.toggle('hidden', !s.customPlafon);
+  if (parseNum(s.oldPlafon) > 0) set('oldPlafon', formatThousands(parseNum(s.oldPlafon)));
+
+  if (s.feeMode === 'persen' || s.feeMode === 'nominal') {
+    state.feeMode = s.feeMode;
+    document.getElementById('feeMode').value = s.feeMode;
+    document.getElementById('feeSuffix').textContent = s.feeMode === 'persen' ? '%' : '';
+    set('feeVal', s.feeVal);
+  }
+
+  state.toEnabled = !!s.toEnabled;
+  document.getElementById('toToggle').checked = state.toEnabled;
+  document.getElementById('toFields').classList.toggle('hidden', !state.toEnabled);
+
+  if (validSteps(s.steps)) {
+    state.steps = s.steps.map(x => ({ months: Math.round(+x.months), rate: +x.rate, payment: +x.payment }));
+    return true;
+  }
+  return false;
+}
+// program dipulihkan setelah programs.csv termuat; tahapan dibangun ulang dari CSV terbaru
+function applySavedProgram() {
+  if (!_saved || !_saved.program) return;
+  const sel = document.getElementById('program');
+  sel.value = _saved.program;
+  if (sel.value !== _saved.program) { sel.value = ''; return; }  // program sudah dihapus dari CSV
+  applyProgram(_saved.tenor);
+}
+function resetSaved() {
+  _stateReady = false;
+  try { localStorage.removeItem(STORE_KEY); } catch (e) {}
+  location.reload();
+}
+
 // ─── Init ───
 document.addEventListener('DOMContentLoaded', () => {
   updateThemeIcon();
+  const restored = restoreState();
   renderSteps();
-  recalcAll();
+  if (!restored) recalcAll();
   updatePrincipalWords();
   updateFeeHint();
 
-  document.getElementById('currency').addEventListener('change', () => { updatePrincipalWords(); updateFeeHint(); scheduleCalc(); });
   ['oldRate', 'oldTerm'].forEach(id => document.getElementById(id).addEventListener('input', scheduleCalc));
 
   calculate();
+  loadPrograms().finally(() => {
+    applySavedProgram();
+    _stateReady = true;
+    saveState();
+  });
 });

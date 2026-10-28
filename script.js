@@ -8,8 +8,6 @@ if (window.Chart && window['chartjs-plugin-annotation']) {
 }
 
 // ─── State ───
-
-//test ditra masuk
 let state = {
   steps: [
     { months: 36, rate: 3, payment: 0 },
@@ -262,7 +260,7 @@ function renderSteps() {
         <span class="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
           <span class="inline-flex items-center justify-center h-5 w-5 rounded bg-bri text-white text-[11px] font-bold">${i + 1}</span> Tahap ${i + 1}
         </span>
-        ${n > 1 ? `<button onclick="removeStep(${i})" class="text-slate-400 hover:text-red-500 text-sm leading-none transition">✕</button>` : ''}
+        ${n > 1 ? `<button onclick="removeStep(${i})" class="text-slate-400 hover:text-briorange text-sm leading-none transition">✕</button>` : ''}
       </div>
       <div class="grid grid-cols-3 gap-2">
         <div><label class="${lab}">Bulan</label><input type="number" value="${s.months}" min="1" step="1" onchange="updateStep(${i},'months',this.value); recalcAll(); scheduleCalc()" class="${inp}"></div>
@@ -425,28 +423,28 @@ function renderSummaryCards(sim, to, principal) {
   let html = `
     <div class="relative overflow-hidden rounded-2xl p-5 text-white shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5" style="background:linear-gradient(135deg,#0072C6,#00529C)">
       <div class="absolute -right-6 -top-6 w-24 h-24 bg-white/10 rounded-full"></div>
-      <p class="text-blue-100 text-xs font-semibold mb-1">Angsuran Baru ${multi ? '(Tahap 1)' : ''}</p>
+      <p class="text-blue-100 text-xs font-semibold mb-1">Angsuran Take Over ${multi ? '(Tahap 1)' : ''}</p>
       <h3 class="text-2xl font-bold mb-1 num">${fmtMoney(firstPmt)}<span class="text-xs font-normal"> /bln</span></h3>
-      <p class="text-[11px] text-blue-200">${multi ? 'Naik bertahap · ' : ''}Total bunga ${fmtCompact(sim.totalInterest)}</p>
+      <p class="text-[11px] text-blue-200">${multi ? 'Angsuran ringan di awal · ' : ''}Total bunga ${fmtCompact(sim.totalInterest)}</p>
     </div>`;
 
   if (to) {
     const selPmt = to.oldPmt - firstPmt;
     const pmtHtml = selPmt >= 0
       ? `<span class="text-emerald-600 dark:text-emerald-400">▼ ${fmtMoney(selPmt)}</span>`
-      : `<span class="text-red-500 dark:text-red-400">▲ ${fmtMoney(Math.abs(selPmt))}</span>`;
+            : `<span class="text-amber-600 dark:text-amber-400">▲ ${fmtMoney(Math.abs(selPmt))}</span>`;
     const hemat = to.efisiensi >= 0;
-    const effColor = hemat ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
+    const effColor = hemat ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400';
     html += `
       <div class="${whiteCard}">
         <p class="text-slate-500 dark:text-slate-400 text-xs font-semibold mb-1">Perubahan Angsuran</p>
         <h3 class="text-xl font-bold mb-1 num">${pmtHtml}</h3>
-        <p class="text-[11px] text-slate-400 dark:text-slate-500">Lama: ${fmtMoney(Math.round(to.oldPmt))}/bln</p>
+                <p class="text-[11px] text-slate-400 dark:text-slate-500">Angsuran sebelum: ${fmtMoney(Math.round(to.oldPmt))}/bln</p>
       </div>
       <div class="${whiteCard}">
-        <p class="text-slate-500 dark:text-slate-400 text-xs font-semibold mb-1">Total Efisiensi TO</p>
-        <h3 class="text-xl font-bold mb-1 num ${effColor}">${hemat ? 'Hemat ' : 'Rugi '}${fmtCompact(Math.abs(to.efisiensi))}</h3>
-        <p class="text-[11px] text-slate-400 dark:text-slate-500">Termasuk biaya TO ${fmtCompact(to.fee)}</p>
+        <p class="text-slate-500 dark:text-slate-400 text-xs font-semibold mb-1">Selisih Total Dibayar</p>
+        <h3 class="text-xl font-bold mb-1 num ${effColor}">${hemat ? 'Hemat ' : 'Lebih '}${fmtCompact(Math.abs(to.efisiensi))}</h3>
+        <p class="text-[11px] text-slate-400 dark:text-slate-500">Biaya tambahan take over ${fmtCompact(to.fee)}</p>
       </div>`;
   } else {
     html += `
@@ -507,31 +505,31 @@ function renderMetrics(sim, to, principal) {
   const org = { bg: 'bg-orange-50 dark:bg-orange-900/20', lc: 'text-orange-600 dark:text-orange-300', vc: 'text-slate-800 dark:text-slate-100', sc: 'text-slate-500 dark:text-slate-400' };
 
   // 1) Skema baru
-  let html = metricSection(to ? 'Skema Baru (Setelah Take Over)' : 'Skema KPR', 'bg-bri',
+  let html = metricSection(to ? 'Skema Take Over (Setelah Take Over)' : 'Skema KPR', 'bg-bri',
     bigCell('Total Jangka Waktu', sim.totalMonths + ' bln', Object.assign({ sub: monthsToText(sim.totalMonths) }, blue)) +
     bigCell('Total Pembayaran', fmtMoney(Math.round(sim.totalPayments)), Object.assign({ sub: balloon ? 'Belum termasuk sisa saldo ' + fmtCompact(sim.endingBalance) : '' }, blue)) +
     bigCell('Total Bunga', fmtMoney(Math.round(sim.totalInterest)), Object.assign({ sub: fmtPct(pctBunga, 1) + ' dari pokok' }, blue)) +
     bigCell(multi ? 'Angsuran (Tahap 1)' : 'Angsuran', fmtMoney(Math.round(firstPmt)) + ' /bln', Object.assign({ sub: multi ? 'Tahap akhir ' + fmtMoney(Math.round(lastPmt)) + ' /bln' : '' }, blue)));
 
   if (to) {
-    // 2) Skema lama (before)
-    html += metricSection('Skema Lama (Sebelum Take Over)', 'bg-briorange',
+        // 2) Skema sebelumnya (before)
+    html += metricSection('Skema Sebelumnya (Sebelum Take Over)', 'bg-briorange',
       bigCell('Total Jangka Waktu Sebelum', to.oldMonths + ' bln', Object.assign({ sub: monthsToText(to.oldMonths) }, org)) +
       bigCell('Total Pembayaran Sebelum', fmtMoney(Math.round(to.oldTotal)), org) +
       bigCell('Total Bunga Sebelum', fmtMoney(Math.round(to.oldTotalBunga)), Object.assign({ sub: to.oldPrincipal > 0 ? fmtPct(to.oldTotalBunga / to.oldPrincipal * 100, 1) + ' dari pokok' : '' }, org)) +
-      bigCell('Angsuran Sebelum', fmtMoney(Math.round(to.oldPmt)) + ' /bln', Object.assign({ sub: 'Plafon lama ' + fmtCompact(to.oldPrincipal) }, org)));
+      bigCell('Angsuran Sebelum', fmtMoney(Math.round(to.oldPmt)) + ' /bln', Object.assign({ sub: 'Plafon sebelumnya ' + fmtCompact(to.oldPrincipal) }, org)));
 
     // 3) Perbandingan
     const selPmt = to.oldPmt - firstPmt;
     const pmtGood = selPmt >= 0;
     const effGood = to.efisiensi >= 0;
     const good = { bg: 'bg-emerald-50 dark:bg-emerald-900/20', lc: 'text-emerald-600 dark:text-emerald-300', vc: 'text-emerald-600 dark:text-emerald-300', sc: 'text-slate-500 dark:text-slate-400' };
-    const bad = { bg: 'bg-red-50 dark:bg-red-900/20', lc: 'text-red-600 dark:text-red-300', vc: 'text-red-600 dark:text-red-300', sc: 'text-slate-500 dark:text-slate-400' };
+    const bad = { bg: 'bg-amber-50 dark:bg-amber-900/20', lc: 'text-amber-600 dark:text-amber-300', vc: 'text-amber-600 dark:text-amber-300', sc: 'text-slate-500 dark:text-slate-400' };
     html += metricSection('Perbandingan Take Over', 'bg-emerald-500',
-  bigCell('Keuntungan Angsuran (vs Existing)', (pmtGood ? '▼ ' : '▲ ') + fmtMoney(Math.round(Math.abs(selPmt))) + ' /bln',
-    Object.assign({ sub: (pmtGood ? 'Angsuran lebih ringan' : 'Angsuran lebih berat') + (multi ? ' (acuan Tahap 1)' : '') }, pmtGood ? good : bad)) +
-  bigCell('Selisih Bayar Total', (effGood ? 'Hemat ' : 'Lebih mahal ') + fmtMoney(Math.round(Math.abs(to.efisiensi))),
-    Object.assign({ sub: 'Total lama − total baru, termasuk biaya TO ' + fmtCompact(to.fee) + (balloon ? ' & sisa saldo' : '') }, effGood ? good : bad)),
+    bigCell('Keunggulan Angsuran (vs Skema Sebelumnya)', (pmtGood ? '▼ ' : '▲ ') + fmtMoney(Math.round(Math.abs(selPmt))) + ' /bln',
+    Object.assign({ sub: (pmtGood ? 'Angsuran lebih ringan' : 'Angsuran lebih tinggi di awal') + (multi ? ' (acuan Tahap 1)' : '') }, pmtGood ? good : bad)) +
+    bigCell('Selisih Total Dibayar', (effGood ? 'Hemat ' : 'Lebih ') + fmtMoney(Math.round(Math.abs(to.efisiensi))),
+    Object.assign({ sub: 'Selisih total skema sebelumnya dengan take over, termasuk biaya tambahan take over ' + fmtCompact(to.fee) + (balloon ? ' & sisa saldo' : '') }, effGood ? good : bad)),
   'lg:grid-cols-2');
   }
 
@@ -543,7 +541,7 @@ function renderMetrics(sim, to, principal) {
     // metricCell('Sisa Saldo Akhir', balloon ? fmtCompact(sim.endingBalance) : sym() + ' 0',
     //   balloon ? { vc: 'text-orange-600 dark:text-orange-400' } : { vc: 'text-emerald-600 dark:text-emerald-400' })
       ;
-  if (to) more += metricCell('Biaya TO (Bulan 0)', fmtCompact(to.fee), { vc: 'text-bri dark:text-blue-300' });
+  if (to) more += metricCell('Biaya Tambahan Take Over', fmtCompact(to.fee), { vc: 'text-bri dark:text-blue-300' });
   html += `<div class="pt-4 border-t border-slate-100 dark:border-slate-700">
     <p class="text-xs font-bold text-slate-400 dark:text-slate-500 mb-2">Detail Lainnya</p>
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${more}</div></div>`;
@@ -556,15 +554,19 @@ function renderToBanner(sim, to) {
   const el = document.getElementById('toBanner');
   if (!to) { el.innerHTML = ''; return; }
   let msg, cls;
-  if (to.efisiensi > 0) { cls = 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-900/40'; msg = `✅ <b>Take over lebih hemat</b> — Anda menghemat <b>${fmtMoney(Math.round(to.efisiensi))}</b> dibanding skema lama.`; }
-  else if (to.efisiensi < 0) { cls = 'bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 border-orange-100 dark:border-orange-900/40'; msg = `⚠️ <b>Take over lebih mahal</b> sebesar <b>${fmtMoney(Math.round(Math.abs(to.efisiensi)))}</b>. Pertimbangkan manfaat lain (bunga awal rendah).`; }
-  else { cls = 'bg-bri-light dark:bg-blue-900/20 text-bri dark:text-blue-300 border-blue-100 dark:border-blue-900/40'; msg = `Total pembayaran skema lama & baru hampir sama.`; }
-  let bep = '';
+    if (to.efisiensi > 0) { cls = 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-900/40'; msg = `✅ <b>Take over lebih menguntungkan</b> — Anda berpotensi menghemat <b>${fmtMoney(Math.round(to.efisiensi))}</b> dibanding skema sebelumnya.`; }
+  else if (to.efisiensi < 0) { cls = 'bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 border-orange-100 dark:border-orange-900/40'; msg = `ℹ️ <b>Total pembayaran take over lebih tinggi</b> sebesar <b>${fmtMoney(Math.round(Math.abs(to.efisiensi)))}</b>, namun Anda menikmati bunga awal yang lebih ringan di tahun-tahun pertama.`; }
+  else { cls = 'bg-bri-light dark:bg-blue-900/20 text-bri dark:text-blue-300 border-blue-100 dark:border-blue-900/40'; msg = `Total pembayaran skema take over & skema sebelumnya hampir sama.`; }
+    let bep = '';
   if (to.meets.length) {
-    const bm = Math.round(to.meets[0]);
-    const after = Math.min(bm + 1, to.horizon);
-    const newCheaper = to.cumNew[after] < to.cumOld[after];
-    bep = `<div class="mt-2 text-xs opacity-90">📍 <b>Titik impas bulan ke-${bm}</b> (${monthsToText(bm)}) — sejak sini, total yang sudah Anda bayar di skema baru ${newCheaper ? 'mulai <b>lebih murah</b>' : 'jadi <b>lebih mahal</b>'} dibanding bertahan di skema lama.</div>`;
+    const parts = to.meets.map(mp => {
+      const bm = Math.round(mp);
+      const after = Math.min(bm + 1, to.horizon);
+      const newCheaper = to.cumNew[after] < to.cumOld[after];
+      return `<b>bulan ke-${bm}</b> (${monthsToText(bm)}) total take over ${newCheaper ? 'mulai <b>lebih ringan</b>' : 'kembali <b>lebih tinggi</b>'} dibanding skema sebelumnya`;
+    });
+    const label = to.meets.length > 1 ? `Terdapat ${to.meets.length} titik impas — ` : `Titik impas di `;
+    bep = `<div class="mt-2 text-xs opacity-90">📍 ${label}${parts.join('; kemudian ')}.</div>`;
   }
   el.innerHTML = `<div class="rounded-2xl border px-5 py-4 text-sm font-medium ${cls}">${msg}${bep}</div>`;
 }
@@ -585,14 +587,17 @@ function renderCharts(sim, to) {
   const cumBaru = [0]; let run = 0;
   sim.rows.forEach(r => { run += r.payment; cumBaru.push(run); });
 
-  const dsSaldo = [{ label: 'Saldo Baru', data: downsample(balBaru, 220), borderColor: '#00529C', backgroundColor: 'rgba(0,82,156,0.08)', borderWidth: 2, fill: true, tension: 0.2, pointRadius: 0, pointHoverRadius: 4 }];
-  const dsKum = [{ label: 'Kumulatif Baru', data: downsample(to ? to.cumNew : cumBaru, 220), borderColor: '#00529C', backgroundColor: 'rgba(0,82,156,0.06)', borderWidth: 2, fill: true, tension: 0.2, pointRadius: 0, pointHoverRadius: 4 }];
+  const dsSaldo = [{ label: 'Saldo Take Over', data: downsample(balBaru, 220), borderColor: '#00529C', backgroundColor: 'rgba(0,82,156,0.08)', borderWidth: 2, fill: true, tension: 0.2, pointRadius: 0, pointHoverRadius: 4 }];
+  const dsKum = [{ label: 'Kumulatif Take Over', data: downsample(to ? to.cumNew : cumBaru, 220), borderColor: '#00529C', backgroundColor: 'rgba(0,82,156,0.06)', borderWidth: 2, fill: true, tension: 0.2, pointRadius: 0, pointHoverRadius: 4 }];
   let annos = {};
   if (to) {
-    dsSaldo.push({ label: 'Saldo Lama', data: downsample(to.oldSaldo, 220), borderColor: '#F58220', borderDash: [5, 4], borderWidth: 2, fill: false, tension: 0.2, pointRadius: 0, pointHoverRadius: 4 });
-    dsKum.push({ label: 'Kumulatif Lama', data: downsample(to.cumOld, 220), borderColor: '#F58220', borderDash: [5, 4], borderWidth: 2, fill: false, tension: 0.2, pointRadius: 0, pointHoverRadius: 4 });
-    if (to.meets.length) {
-      annos.bep = { type: 'line', xMin: Math.round(to.meets[0]), xMax: Math.round(to.meets[0]), borderColor: '#94a3b8', borderWidth: 1.5, borderDash: [6, 4], label: { display: true, content: 'BEP', position: 'start', backgroundColor: 'rgba(100,116,139,0.9)', color: '#fff', font: { size: 10 } } };
+    dsSaldo.push({ label: 'Saldo Sebelumnya', data: downsample(to.oldSaldo, 220), borderColor: '#F58220', borderDash: [5, 4], borderWidth: 2, fill: false, tension: 0.2, pointRadius: 0, pointHoverRadius: 4 });
+    dsKum.push({ label: 'Kumulatif Sebelumnya', data: downsample(to.cumOld, 220), borderColor: '#F58220', borderDash: [5, 4], borderWidth: 2, fill: false, tension: 0.2, pointRadius: 0, pointHoverRadius: 4 });
+        if (to.meets.length) {
+      to.meets.forEach((mp, idx) => {
+        const x = Math.round(mp);
+        annos['bep' + idx] = { type: 'line', xMin: x, xMax: x, borderColor: '#94a3b8', borderWidth: 1.5, borderDash: [6, 4], label: { display: true, content: 'Titik Impas', position: idx % 2 ? 'end' : 'start', backgroundColor: 'rgba(100,116,139,0.9)', color: '#fff', font: { size: 10 } } };
+      });
     }
   }
 
